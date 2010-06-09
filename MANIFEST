@@ -1,0 +1,17 @@
+Build.PL
+Changes
+examples/sclient.pl
+lib/IO/Async/SSL.pm
+lib/IO/Async/SSLStream.pm
+MANIFEST			This list of files
+t/00use.t
+t/01connect-openssl.t
+t/01connect-socat.t
+t/02listen-socat.t
+t/10cross.t
+t/privkey.pem
+t/server.pem
+Makefile.PL
+README
+LICENSE
+META.yml

@@ -1,0 +1,85 @@
+NAME
+    "IO::Async::SSL" - Use SSL/TLS with IO::Async
+
+SYNOPSIS
+     use IO::Async::Loop;
+     use IO::Async::SSL;
+     use IO::Async::SLStream;
+
+     my $loop = IO::Async::Loop->new();
+
+     $loop->SSL_connect(
+        host     => "www.example.com",
+        service  => "https",
+
+        on_connected => sub {
+           my ( $sock ) = @_;
+
+           my $stream = IO::Async::SSLStream->new(
+              handle => $sock,
+              on_read => sub {
+                 ...
+              },
+           );
+
+           $loop->add( $stream );
+       
+           ...
+        },
+
+        on_resolve_error => sub { print STDERR "Cannot resolve - $_[0]\n"; },
+        on_connect_error => sub { print STDERR "Cannot connect\n"; },
+        on_ssl_error     => sub { print STDERR "Cannot negotiate SSL - $_[-1]\n"; },
+     );
+
+DESCRIPTION
+    This module extends IO::Async::Loop to allow the use of SSL or TLS-based
+    connections using IO::Socket::SSL. It provides two extension methods on
+    the "IO::Async::Loop" class, which extend "connect" and "listen", to
+    yield "IO::Socket::SSL"-upgraded socket handles. These socket handles
+    must then be wrapped in instances of IO::Async::SSLStream.
+
+METHODS
+  $loop->SSL_connect( %params )
+    This method performs a non-blocking connection to a given address or set
+    of addresses, upgrades the socket to SSL, then invokes the
+    "on_connected" continuation when the SSL-wrapped socket is ready for use
+    by the application.
+
+    It takes all the same arguments as "IO::Async::Loop::connect()". Any
+    argument whose name starts "SSL_" will be passed on to the
+    IO::Socket::SSL constructor rather than the Loop's "connect" method. It
+    is not required to pass the "socktype" option, as SSL implies this will
+    be "stream".
+
+    In addition, the following arguments are required:
+
+    on_ssl_error => CODE
+            A continuation that is invoked if "IO::Socket::SSL" detects an
+            SSL-based error once the actual stream socket is connected.
+
+  $loop->SSL_listen( %params )
+    This method sets up a listening socket using the addresses given, and
+    will invoke the "on_accept" callback each time a new connection is
+    accepted on the socket and the initial SSL negotiation has been
+    completed.
+
+    It takes all the same arguments as "IO::Async::Loop::listen()". Any
+    argument whose name starts "SSL_" will be passed on to the
+    IO::Socket::SSL constructor rather than the Loop's "listen" method. It
+    is not required to pass the "socktype" option, as SSL implies this will
+    be "stream".
+
+    In addition, the following arguments are rquired:
+
+    on_ssl_error => CODE
+            A continuation that is invoked if "IO::Socket::SSL" detects an
+            SSL-based error once the actual stream socket is connected.
+
+    The underlying IO::Socket::SSL socket will also require the server key
+    and certificate for a server-mode socket. See its documentation for more
+    details.
+
+AUTHOR
+    Paul Evans <leonerd@leonerd.org.uk>
+
