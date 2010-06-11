@@ -1,4 +1,8 @@
 Revision history for IO-Async-SSL
 
+0.02    CHANGES:
+         * Added Test::Pod testing
+         * Make sure tests don't fail on machines without socat or openssl
+
 0.01    First version, released on an unsuspecting world.
 

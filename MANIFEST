@@ -3,15 +3,16 @@ Changes
 examples/sclient.pl
 lib/IO/Async/SSL.pm
 lib/IO/Async/SSLStream.pm
+LICENSE
+Makefile.PL
 MANIFEST			This list of files
+META.yml
+README
 t/00use.t
 t/01connect-openssl.t
 t/01connect-socat.t
 t/02listen-socat.t
 t/10cross.t
+t/99pod.t
 t/privkey.pem
 t/server.pem
-Makefile.PL
-README
-LICENSE
-META.yml

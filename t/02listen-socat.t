@@ -62,7 +62,7 @@ my $kid = $loop->spawn_child(
 close $ssl_rd;
 close $ssl_wr;
 
-END { kill 'TERM', $kid }
+END { kill TERM => $kid if defined $kid }
 
 my @socat_lines;
 $loop->add( my $socat_stream = IO::Async::Stream->new(
