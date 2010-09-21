@@ -1,5 +1,10 @@
 Revision history for IO-Async-SSL
 
+0.03    BUGFIXES:
+         * Don't is() test directly on socket addresses; unpack them and use
+           is_deeply()
+         * Supply a hostname to $loop->listen()
+
 0.02    CHANGES:
          * Added Test::Pod testing
          * Make sure tests don't fail on machines without socat or openssl

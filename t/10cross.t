@@ -10,6 +10,7 @@ use IO::Async::Test;
 use IO::Async::Loop;
 use IO::Async::SSL;
 use IO::Async::SSLStream;
+use Socket qw( PF_INET unpack_sockaddr_in );
 
 my $loop = IO::Async::Loop->new;
 
@@ -19,7 +20,9 @@ my $listen_sock;
 my $accepted_sock;
 
 $loop->SSL_listen(
-   service => 4433,
+   family  => PF_INET,
+   host    => "localhost",
+   service => "4433",
 
    SSL_key_file  => "t/privkey.pem",
    SSL_cert_file => "t/server.pem",
@@ -37,6 +40,7 @@ wait_for { defined $listen_sock };
 my $connected_sock;
 
 $loop->SSL_connect(
+   family  => PF_INET,
    host    => "localhost",
    service => "4433",
 
@@ -49,7 +53,9 @@ $loop->SSL_connect(
 
 wait_for { defined $connected_sock and defined $accepted_sock };
 
-is( $connected_sock->sockname, $accepted_sock->peername, 'Sockets crossconnected' );
+is_deeply( [ unpack_sockaddr_in $connected_sock->sockname ],
+           [ unpack_sockaddr_in $accepted_sock->peername ],
+           'Sockets crossconnected' );
 
 my @c_lines;
 my $c_stream = IO::Async::SSLStream->new(
