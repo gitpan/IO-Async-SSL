@@ -4,8 +4,11 @@ use strict;
 use warnings;
 
 use IO::Async::Loop;
+use IO::Async::Protocol::Stream;
+use IO::Async::Signal;
 use IO::Async::Stream;
 use IO::Async::SSL;
+use IO::Async::SSLStream;
 
 my $CRLF = "\x0d\x0a"; # because \r\n is not portable
 
@@ -17,7 +20,7 @@ my $loop = IO::Async::Loop->new;
 my ( $socketstream, $stdiostream );
 my $peeraddr;
 
-$loop->SSL_connect(
+$loop->connect(
    host    => $HOST,
    service => $PORT,
 
@@ -27,12 +30,11 @@ $loop->SSL_connect(
       my $socket = $socketstream->read_handle;
       $peeraddr = $socket->peerhost . ":" . $socket->peerport;
 
-      print STDERR "Connected to $peeraddr\n";
+      print STDERR "Connected to $peeraddr. Send SIGQUIT (Ctrl-\\) to start SSL upgrade\n";
    },
 
    on_resolve_error => sub { die "Cannot resolve - $_[0]\n" },
    on_connect_error => sub { die "Cannot connect\n" },
-   on_ssl_error     => sub { die "SSL error $_[-1]\n" },
 );
 
 $loop->loop_once until defined $socketstream;
@@ -43,7 +45,9 @@ my $quit_mergepoint = IO::Async::MergePoint->new(
    on_finished => sub { $loop->loop_stop },
 );
 
-$socketstream->configure(
+my $socketproto = IO::Async::Protocol::Stream->new(
+   transport => $socketstream,
+
    on_read => sub {
       my ( undef, $buffref, $closed ) = @_;
 
@@ -61,7 +65,7 @@ $socketstream->configure(
       $stdiostream->close_when_empty;
    },
 );
-$loop->add( $socketstream );
+$loop->add( $socketproto );
 
 $stdiostream = IO::Async::Stream->new(
    read_handle  => \*STDIN,
@@ -71,7 +75,7 @@ $stdiostream = IO::Async::Stream->new(
       my ( undef, $buffref, $closed ) = @_;
 
       if( $$buffref =~ s/^(.*)\n// ) {
-         $socketstream->write( $1 . $CRLF );
+         $socketproto->write( $1 . $CRLF );
          return 1;
       }
 
@@ -80,9 +84,28 @@ $stdiostream = IO::Async::Stream->new(
 
    on_closed => sub {
       $quit_mergepoint->done( 'stdio' );
-      $socketstream->close_when_empty;
+      $socketproto->close_when_empty;
    },
 );
 $loop->add( $stdiostream );
+
+my $signal = IO::Async::Signal->new(
+   name => "QUIT",
+   on_receipt => sub {
+      my ( $self ) = @_;
+      $loop->remove( $self );
+
+      $socketproto->SSL_upgrade(
+         on_upgraded => sub {
+            print STDERR "Now upgraded to SSL\n"; # TODO: get actual name somehow?
+         },
+
+         on_error => sub {
+            die "Cannot upgrade to SSL - $_[-1]\n";
+         },
+      );
+   },
+);
+$loop->add( $signal );
 
 $loop->loop_forever;

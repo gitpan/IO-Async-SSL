@@ -8,7 +8,7 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use Carp;
 
@@ -25,7 +25,6 @@ C<IO::Async::SSL> - Use SSL/TLS with L<IO::Async>
 
  use IO::Async::Loop;
  use IO::Async::SSL;
- use IO::Async::SLStream;
 
  my $loop = IO::Async::Loop->new();
 
@@ -33,11 +32,10 @@ C<IO::Async::SSL> - Use SSL/TLS with L<IO::Async>
     host     => "www.example.com",
     service  => "https",
 
-    on_connected => sub {
-       my ( $sock ) = @_;
+    on_stream => sub {
+       my ( $stream ) = @_;
 
-       my $stream = IO::Async::SSLStream->new(
-          handle => $sock,
+       $stream->configure(
           on_read => sub {
              ...
           },
@@ -55,23 +53,112 @@ C<IO::Async::SSL> - Use SSL/TLS with L<IO::Async>
 
 =head1 DESCRIPTION
 
-This module extends L<IO::Async::Loop> to allow the use of SSL or TLS-based
-connections using L<IO::Socket::SSL>. It provides two extension methods on the
-C<IO::Async::Loop> class, which extend C<connect> and C<listen>, to yield
-C<IO::Socket::SSL>-upgraded socket handles. These socket handles must then be
-wrapped in instances of L<IO::Async::SSLStream>.
+This module extends existing L<IO::Async> classes with extra methods to allow
+the use of SSL or TLS-based connections using L<IO::Socket::SSL>. It does not
+directly provide any methods or functions of its own.
+
+Primarily, it provides C<SSL_connect> and C<SSL_listen>, which yield
+C<IO::Socket::SSL>-upgraded socket handles or L<IO::Async::SSLStream>
+instances, and two forms of C<SSL_upgrade> to upgrade an existing TCP
+connection to use SSL.
 
 =cut
 
-=head1 METHODS
+=head1 LOOP METHODS
+
+The following extra methods are added to L<IO::Async::Loop>.
 
 =cut
+
+=head2 $loop->SSL_upgrade( %params )
+
+This method upgrades a given stream filehandle into an SSL-wrapped stream, and
+will invoke the C<on_upgraded> continuation when the handle is ready.
+
+Takes the following parameters:
+
+=over 8
+
+=item handle => IO
+
+The IO handle of an already-established connection to act as the transport
+for SSL.
+
+=item on_upgraded => CODE
+
+A continuation that is invoked when the socket has been successfully upgraded
+to SSL. It will be passed an instance of an C<IO::Socket::SSL>, which must be
+wrapped in an instance of L<IO::Async::SSLStream>.
+
+ $on_upgraded->( $sslsocket )
+
+=item on_error => CODE
+
+A continuation that is invoked if C<IO::Socket::SSL> detects an error while
+negotiating the upgrade.
+
+ $on_error->( $! )
+
+=item SSL_server => BOOL
+
+If true, indicates this is the server side of the connection.
+
+=back
+
+In addition, any parameter whose name starts C<SSL_> will be passed to the
+C<IO::Socket::SSL> constructor.
+
+=cut
+
+sub IO::Async::Loop::SSL_upgrade
+{
+   my $loop = shift;
+   my %params = @_;
+
+   my $socket = delete $params{handle} or croak "Expected 'handle'";
+
+   my $on_upgraded = delete $params{on_upgraded} or croak "Expected 'on_upgraded'";
+   my $on_error    = delete $params{on_error}    or croak "Expected 'on_error'";
+
+   my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
+
+   $socket = IO::Socket::SSL->start_SSL( $socket, 
+      SSL_startHandshake => 0,
+      %ssl_params,
+   ) or return $on_error->( "$!" );
+
+   my $ready_method = $ssl_params{SSL_server} ? "accept_SSL" : "connect_SSL";
+
+   my $ready = sub {
+      my ( $self ) = @_;
+      if( $socket->$ready_method ) {
+         $loop->remove( $self );
+         $on_upgraded->( $socket );
+         return;
+      }
+
+      $! == EAGAIN
+         or return $on_error( "$!" );
+
+      $self->want_readready ( $SSL_ERROR == SSL_WANT_READ );
+      $self->want_writeready( $SSL_ERROR == SSL_WANT_WRITE );
+   };
+
+   $loop->add( my $handle = IO::Async::Handle->new(
+      handle => $socket,
+      on_read_ready  => $ready,
+      on_write_ready => $ready,
+   ) );
+
+   $ready->( $handle );
+}
 
 =head2 $loop->SSL_connect( %params )
 
 This method performs a non-blocking connection to a given address or set of
-addresses, upgrades the socket to SSL, then invokes the C<on_connected>
-continuation when the SSL-wrapped socket is ready for use by the application.
+addresses, upgrades the socket to SSL, then invokes the continuation when the
+SSL handshake is complete. This can be either the C<on_connected> or
+C<on_stream> continuation; C<on_socket> is not supported.
 
 It takes all the same arguments as C<IO::Async::Loop::connect()>. Any argument
 whose name starts C<SSL_> will be passed on to the L<IO::Socket::SSL>
@@ -89,53 +176,52 @@ error once the actual stream socket is connected.
 
 =back
 
+If the C<on_connected> continuation is used, the socket handle it yields will
+be a C<IO::Socket::SSL>, which must be wrapped in C<IO::Async::SSLStream> to
+be used by C<IO::Async>. The C<on_stream> continuation will already yield such
+an instance.
+
 =cut
 
-# This is seven shades of evil
-# ... fun though
 sub IO::Async::Loop::SSL_connect
 {
    my $loop = shift;
-   my %args = @_;
+   my %params = @_;
 
-   my %ssl_args = map { $_ => delete $args{$_} } grep m/^SSL_/, keys %args;
+   my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
 
-   my $on_connected = delete $args{on_connected} or croak "Expected 'on_connected'";
-   my $on_ssl_error = delete $args{on_ssl_error} or croak "Expected 'on_ssl_error'";
+   my $on_connected;
+   if( exists $params{on_connected} ) {
+      $on_connected = delete $params{on_connected};
+   }
+   elsif( exists $params{on_stream} ) {
+      my $on_stream = delete $params{on_stream};
+      require IO::Async::SSLStream;
+      $on_connected = sub {
+         my ( $handle ) = @_;
+         $on_stream->( IO::Async::SSLStream->new( handle => $handle ) );
+      };
+   }
+   else {
+      croak "Expected 'on_connected' or 'on_stream'";
+   }
+
+   my $on_ssl_error = delete $params{on_ssl_error} or croak "Expected 'on_ssl_error'";
 
    $loop->connect(
       socktype => 'stream', # SSL over DGRAM or RAW makes no sense
-      %args,
+      %params,
       on_connected => sub {
          my ( $socket ) = @_;
 
-         $socket = IO::Socket::SSL->start_SSL( $socket, 
-            SSL_startHandshake => 0,
-            %ssl_args,
-         ) or return $on_ssl_error->( "$!" );
+         $loop->SSL_upgrade(
+            %ssl_params,
 
-         my $ready = sub {
-            my ( $self ) = @_;
-            if( $socket->connect_SSL ) {
-               $loop->remove( $self );
-               $on_connected->( $socket );
-               return;
-            }
-
-            $! == EAGAIN
-               or return $on_ssl_error( "$!" );
-
-            $self->want_readready ( $SSL_ERROR == SSL_WANT_READ );
-            $self->want_writeready( $SSL_ERROR == SSL_WANT_WRITE );
-         };
-
-         $loop->add( my $handle = IO::Async::Handle->new(
             handle => $socket,
-            on_read_ready  => $ready,
-            on_write_ready => $ready,
-         ) );
 
-         $ready->( $handle );
+            on_upgraded => $on_connected,
+            on_error    => $on_ssl_error,
+         );
       },
    );
 }
@@ -143,8 +229,9 @@ sub IO::Async::Loop::SSL_connect
 =head2 $loop->SSL_listen( %params )
 
 This method sets up a listening socket using the addresses given, and will
-invoke the C<on_accept> callback each time a new connection is accepted on the
-socket and the initial SSL negotiation has been completed.
+invoke the callback each time a new connection is accepted on the socket and
+the SSL handshake has been completed. This can be either the C<on_accepted> or
+C<on_stream> continuation; C<on_socket> is not supported.
 
 It takes all the same arguments as C<IO::Async::Loop::listen()>. Any argument
 whose name starts C<SSL_> will be passed on to the L<IO::Socket::SSL>
@@ -165,54 +252,103 @@ error once the actual stream socket is connected.
 The underlying L<IO::Socket::SSL> socket will also require the server key and
 certificate for a server-mode socket. See its documentation for more details.
 
+If the C<on_accepted> continuation is used, the socket handle it yields will
+be a C<IO::Socket::SSL>, which must be wrapped in C<IO::Async::SSLStream> to
+be used by C<IO::Async>. The C<on_stream> continuation will already yield such
+an instance.
+
 =cut
 
-# More evil
 sub IO::Async::Loop::SSL_listen
 {
    my $loop = shift;
-   my %args = @_;
+   my %params = @_;
 
-   my %ssl_args = map { $_ => delete $args{$_} } grep m/^SSL_/, keys %args;
+   my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
 
-   my $on_accept    = delete $args{on_accept}    or croak "Expected 'on_accept'";
-   my $on_ssl_error = delete $args{on_ssl_error} or croak "Expected 'on_ssl_error'";
+   my $on_accept;
+   if( exists $params{on_accept} ) {
+      $on_accept = delete $params{on_accept};
+   }
+   elsif( exists $params{on_stream} ) {
+      my $on_stream = delete $params{on_stream};
+      require IO::Async::SSLStream;
+      $on_accept = sub {
+         my ( $handle ) = @_;
+         $on_stream->( IO::Async::SSLStream->new( handle => $handle ) );
+      };
+   }
+   else {
+      croak "Expected 'on_accept' or 'on_stream'";
+   }
+
+   my $on_ssl_error = delete $params{on_ssl_error} or croak "Expected 'on_ssl_error'";
 
    $loop->listen(
       socktype => 'stream',
-      %args,
+      %params,
       on_accept => sub {
          my ( $socket ) = @_;
 
-         $socket = IO::Socket::SSL->start_SSL( $socket,
-            SSL_startHandshake => 0,
+         $loop->SSL_upgrade(
             SSL_server => 1,
-            %ssl_args,
-         ) or return $on_ssl_error->( "$!" );
+            %ssl_params,
 
-         my $ready = sub {
-            my ( $self ) = @_;
-            if( $socket->accept_SSL ) {
-               $loop->remove( $self );
-               $on_accept->( $socket );
-               return;
-            }
-
-            $! == EAGAIN
-               or return $on_ssl_error( "$!" );
-
-            $self->want_readready ( $SSL_ERROR == SSL_WANT_READ );
-            $self->want_writeready( $SSL_ERROR == SSL_WANT_WRITE );
-         };
-
-         $loop->add( my $handle = IO::Async::Handle->new(
             handle => $socket,
-            on_read_ready  => $ready,
-            on_write_ready => $ready,
-         ) );
 
-         $ready->( $handle );
+            on_upgraded => $on_accept,
+            on_error    => $on_ssl_error,
+         );
       },
+   );
+}
+
+=head1 STREAM PROTOCOL METHODS
+
+The following extra methods are added to L<IO::Async::Protocol::Stream>.
+
+=cut
+
+=head2 $protocol->SSL_upgrade( %params )
+
+A shortcut to calling C<< $loop->SSL_upgrade >>. This method will unconfigure
+the C<transport> of the Protocol, upgrade it to SSL, then reconfigure it again
+newly wrapped in a C<IO::Async::SSLStream> instance. It takes the same
+arguments as C<< $loop->SSL_upgrade >>, except that the C<handle> argument is
+not required as it's taken from the Protocol's C<transport>.
+
+=cut
+
+sub IO::Async::Protocol::Stream::SSL_upgrade
+{
+   my $protocol = shift;
+   my %params = @_;
+
+   my $on_upgraded = delete $params{on_upgraded} or croak "Expected 'on_upgraded'";
+
+   my $loop = $protocol->get_loop or croak "Expected to be a member of a Loop";
+
+   require IO::Async::SSLStream;
+
+   my $socket = $protocol->transport->read_handle;
+
+   $protocol->configure( transport => undef );
+
+   $loop->SSL_upgrade(
+      handle => $socket,
+      on_upgraded => sub {
+         my ( $newsocket ) = @_;
+
+         my $sslstream = IO::Async::SSLStream->new(
+            handle => $newsocket,
+         );
+
+         $protocol->configure( transport => $sslstream );
+
+         $on_upgraded->();
+      },
+
+      %params,
    );
 }
 

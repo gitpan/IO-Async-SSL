@@ -8,6 +8,7 @@ my $build = Module::Build->new(
    requires => {
       'IO::Async' => 0,
       'IO::Async::Handle' => '0.29',
+      'IO::Async::Protocol::Stream' => 0,
       'IO::Socket::SSL' => 0,
    },
    build_requires => {

@@ -1,5 +1,6 @@
 Build.PL
 Changes
+examples/delayed_sclient.pl
 examples/sclient.pl
 lib/IO/Async/SSL.pm
 lib/IO/Async/SSLStream.pm
@@ -13,6 +14,9 @@ t/01connect-openssl.t
 t/01connect-socat.t
 t/02listen-socat.t
 t/10cross.t
+t/11upgrade.t
+t/12protocol-upgrade.t
+t/20stream.t
 t/99pod.t
 t/privkey.pem
 t/server.pem

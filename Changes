@@ -1,5 +1,9 @@
 Revision history for IO-Async-SSL
 
+0.04    CHANGES:
+         * New SSL_upgrade method on Loop and Protocol::Stream
+         * Support on_stream continuation for SSL_connect and SSL_listen
+
 0.03    BUGFIXES:
          * Don't is() test directly on socket addresses; unpack them and use
            is_deeply()
