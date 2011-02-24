@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
 package IO::Async::SSL;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Carp;
 
@@ -124,6 +124,10 @@ sub IO::Async::Loop::SSL_upgrade
 
    $socket = IO::Socket::SSL->start_SSL( $socket, 
       SSL_startHandshake => 0,
+
+      # Required to make IO::Socket::SSL not ->close before we have a chance to remove it from the loop
+      SSL_error_trap => sub { },
+
       %ssl_params,
    ) or return $on_error->( "$!" );
 
@@ -137,8 +141,12 @@ sub IO::Async::Loop::SSL_upgrade
          return;
       }
 
-      $! == EAGAIN
-         or return $on_error( "$!" );
+      if( $! != EAGAIN ) {
+         my $errstr = "$!";
+         $loop->remove( $self );
+         $on_error->( $errstr );
+         return;
+      }
 
       $self->want_readready ( $SSL_ERROR == SSL_WANT_READ );
       $self->want_writeready( $SSL_ERROR == SSL_WANT_WRITE );
@@ -352,11 +360,10 @@ sub IO::Async::Protocol::Stream::SSL_upgrade
    );
 }
 
-# Keep perl happy; keep Britain tidy
-1;
-
-__END__
-
 =head1 AUTHOR
 
 Paul Evans <leonerd@leonerd.org.uk>
+
+=cut
+
+0x55AA;

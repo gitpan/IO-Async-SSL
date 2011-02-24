@@ -10,7 +10,6 @@ use IO::Async::Test;
 use IO::Async::Loop;
 use IO::Async::SSL;
 use IO::Async::SSLStream;
-use Socket qw( PF_INET unpack_sockaddr_in );
 
 my $loop = IO::Async::Loop->new;
 
@@ -20,7 +19,7 @@ my $listen_sock;
 my $a_stream;
 
 $loop->SSL_listen(
-   family  => PF_INET,
+   family  => "inet",
    host    => "localhost",
    service => "4433",
 
@@ -40,7 +39,7 @@ wait_for { defined $listen_sock };
 my $c_stream;
 
 $loop->SSL_connect(
-   family  => PF_INET,
+   family  => "inet",
    host    => "localhost",
    service => "4433",
 

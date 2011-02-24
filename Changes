@@ -1,5 +1,9 @@
 Revision history for IO-Async-SSL
 
+0.05    BUGFIXES:
+         * Ensure clean shutdown on SSL upgrade failure
+         * Explicitly set family => "inet" in tests against socat
+
 0.04    CHANGES:
          * New SSL_upgrade method on Loop and Protocol::Stream
          * Support on_stream continuation for SSL_connect and SSL_listen

@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( IO::Async::Stream );
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );
@@ -75,11 +75,6 @@ sub on_write_ready
    $self->_do_ssl_read if $self->{read_wants_write};
 }
 
-# Keep perl happy; keep Britain tidy
-1;
-
-__END__
-
 =head1 BUGS
 
 =over 4
@@ -98,3 +93,7 @@ with regular C<write> with C<autoflush> turned off.
 =head1 AUTHOR
 
 Paul Evans <leonerd@leonerd.org.uk>
+
+=cut
+
+0x55AA;

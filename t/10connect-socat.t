@@ -13,8 +13,8 @@ use IO::Async::SSLStream;
 
 use POSIX qw( WEXITSTATUS );
 
-system( "openssl --help >/dev/null 2>&1" ) == 0 or
-   plan skip_all => "no openssl";
+system( "socat -help >/dev/null 2>&1" ) == 0 or
+   plan skip_all => "no socat";
 
 plan tests => 3;
 
@@ -31,13 +31,13 @@ my $kid = $loop->spawn_child(
       stdin  => $ssl_rd,
       stdout => $ssl_wr,
    ],
-   command => [ "openssl", "s_server", "-key", "privkey.pem", "-cert", "server.pem" ],
+   command => [ "socat", "OPENSSL-LISTEN:4434,cert=server.pem,key=privkey.pem,verify=0", "STDIO" ],
    on_exit => sub {
       my ( $pid, $exitcode ) = @_;
 
       my $status = WEXITSTATUS( $exitcode );
 
-      $status == 0 or die "openssl failed with $status\n";
+      $status == 0 or die "socat failed with $status\n";
    },
 );
 
@@ -46,25 +46,26 @@ close $ssl_wr;
 
 END { kill TERM => $kid if defined $kid }
 
-my @openssl_lines;
-$loop->add( my $openssl_stream = IO::Async::Stream->new(
+my @socat_lines;
+$loop->add( my $socat_stream = IO::Async::Stream->new(
    read_handle => $my_rd,
    write_handle => $my_wr,
 
    on_read => sub {
       my ( $stream, $buffref, $closed ) = @_;
-      push @openssl_lines, $1 while $$buffref =~ s/^(.*)\n//;
+      push @socat_lines, $1 while $$buffref =~ s/^(.*)\n//;
       return 0;
    },
 ) );
 
-sleep 1; # This is a hack. Waiting for openssl to start
+sleep 1; # This is a hack. Waiting for socat to start
 
 my $sslsock;
 
 $loop->SSL_connect(
+   family  => "inet",
    host    => "localhost",
-   service => "4433", # openssl s_server's default
+   service => "4434",
 
    on_connected => sub { $sslsock = shift },
 
@@ -90,19 +91,19 @@ my $sslstream = IO::Async::SSLStream->new(
 
 $loop->add( $sslstream );
 
-undef @openssl_lines;
+undef @socat_lines;
 
 $sslstream->write( "Send a line\n" );
 
-wait_for { @openssl_lines };
+wait_for { @socat_lines };
 
-is( $openssl_lines[0], "Send a line", 'Line received by openssl' );
+is( $socat_lines[0], "Send a line", 'Line received by openssl' );
 
-$openssl_stream->write( "Reply a line\n" );
+$socat_stream->write( "Reply a line\n" );
 
 wait_for { @local_lines };
 
 is( $local_lines[0], "Reply a line", 'Line received by local socket' );
 
-undef @openssl_lines;
+undef @socat_lines;
 undef @local_lines;

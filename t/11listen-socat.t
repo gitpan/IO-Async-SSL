@@ -22,16 +22,35 @@ my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
 
+my $listen_sock;
+my $sslsock;
+
+$loop->SSL_listen(
+   family  => "inet",
+   service => "4434",
+
+   SSL_key_file  => "t/privkey.pem",
+   SSL_cert_file => "t/server.pem",
+
+   on_listen => sub { $listen_sock = shift },
+   on_accept => sub { $sslsock = shift },
+
+   on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
+   on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
+   on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
+);
+
+wait_for { defined $listen_sock };
+
 my ( $my_rd, $ssl_wr, $ssl_rd, $my_wr ) = $loop->pipequad
    or die "Cannot pipequad - $!";
 
 my $kid = $loop->spawn_child(
    setup => [
-      chdir => "t",
       stdin  => $ssl_rd,
       stdout => $ssl_wr,
    ],
-   command => [ "socat", "OPENSSL-LISTEN:4434,cert=server.pem,key=privkey.pem,verify=0", "STDIO" ],
+   command => [ "socat", "OPENSSL:localhost:4434,verify=0", "STDIO" ],
    on_exit => sub {
       my ( $pid, $exitcode ) = @_;
 
@@ -58,21 +77,6 @@ $loop->add( my $socat_stream = IO::Async::Stream->new(
    },
 ) );
 
-sleep 1; # This is a hack. Waiting for socat to start
-
-my $sslsock;
-
-$loop->SSL_connect(
-   host    => "localhost",
-   service => "4434",
-
-   on_connected => sub { $sslsock = shift },
-
-   on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-   on_connect_error => sub { die "Cannot connect\n" },
-   on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
-);
-
 wait_for { defined $sslsock };
 
 ok( defined $sslsock, "Managed to connect\n" );
@@ -96,7 +100,7 @@ $sslstream->write( "Send a line\n" );
 
 wait_for { @socat_lines };
 
-is( $socat_lines[0], "Send a line", 'Line received by openssl' );
+is( $socat_lines[0], "Send a line", 'Line received by socat' );
 
 $socat_stream->write( "Reply a line\n" );
 
