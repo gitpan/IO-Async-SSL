@@ -1,5 +1,9 @@
 Revision history for IO-Async-SSL
 
+0.06    BUGFIXES:
+         * Make sure to pass 'socktype' hint to ->connect or ->listen during
+           testing
+
 0.05    BUGFIXES:
          * Ensure clean shutdown on SSL upgrade failure
          * Explicitly set family => "inet" in tests against socat

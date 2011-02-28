@@ -236,9 +236,10 @@ SKIP: {
    my $accepted_sock;
 
    $loop->listen(
-      family  => "inet",
-      host    => "localhost",
-      service => "",
+      family   => "inet",
+      host     => "localhost",
+      service  => "",
+      socktype => "stream",
 
       on_listen => sub { $listen_sock = shift },
       on_accept => sub { $accepted_sock = shift },
@@ -302,9 +303,10 @@ SKIP: {
    my $connected_sock;
 
    $loop->connect(
-      family  => "inet",
-      host    => "localhost",
-      service => $port,
+      family   => "inet",
+      host     => "localhost",
+      service  => $port,
+      socktype => "stream",
 
       on_connected => sub { $connected_sock = shift },
 
