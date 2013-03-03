@@ -20,3 +20,4 @@ t/20stream.t
 t/99pod.t
 t/privkey.pem
 t/server.pem
+META.json

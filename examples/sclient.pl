@@ -3,11 +3,20 @@
 use strict;
 use warnings;
 
+use Getopt::Long;
 use IO::Async::Loop;
-use IO::Async::Stream;
+use IO::Async::Stream 0.54; # ->new_close_future
 use IO::Async::SSL;
 
 my $CRLF = "\x0d\x0a"; # because \r\n is not portable
+
+my $DUMPCERT;
+my $FAMILY;
+GetOptions(
+   'd|dumpcert' => \$DUMPCERT,
+   '4|ipv4'     => sub { $FAMILY = "inet" },
+   '6|ipv6'     => sub { $FAMILY = "inet6" },
+) or exit 1;
 
 my $HOST = shift @ARGV or die "Need HOST";
 my $PORT = shift @ARGV or die "Need PORT";
@@ -20,6 +29,7 @@ my $peeraddr;
 $loop->SSL_connect(
    host    => $HOST,
    service => $PORT,
+   family  => $FAMILY,
 
    on_stream => sub {
       $socketstream = shift;
@@ -28,6 +38,10 @@ $loop->SSL_connect(
       $peeraddr = $socket->peerhost . ":" . $socket->peerport;
 
       print STDERR "Connected to $peeraddr\n";
+
+      if( $DUMPCERT ) {
+         print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
+      }
    },
 
    on_resolve_error => sub { die "Cannot resolve - $_[0]\n" },
@@ -36,12 +50,6 @@ $loop->SSL_connect(
 );
 
 $loop->loop_once until defined $socketstream;
-
-my $quit_mergepoint = IO::Async::MergePoint->new(
-   needs => [qw[ socket stdio ]],
-
-   on_finished => sub { $loop->loop_stop },
-);
 
 $socketstream->configure(
    on_read => sub {
@@ -57,7 +65,6 @@ $socketstream->configure(
 
    on_closed => sub {
       print STDERR "Closed connection to $peeraddr\n";
-      $quit_mergepoint->done( 'socket' );
       $stdiostream->close_when_empty;
    },
 );
@@ -79,10 +86,9 @@ $stdiostream = IO::Async::Stream->new(
    },
 
    on_closed => sub {
-      $quit_mergepoint->done( 'stdio' );
       $socketstream->close_when_empty;
    },
 );
 $loop->add( $stdiostream );
 
-$loop->loop_forever;
+$loop->await( $socketstream->new_close_future, $stdiostream->new_close_future );

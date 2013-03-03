@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 3;
+use Test::More;
 
 use IO::Async::Test;
 
@@ -56,6 +56,7 @@ $server_proto->SSL_upgrade(
 );
 
 $client_proto->SSL_upgrade(
+   SSL_verify_mode => 0,
    on_upgraded => sub { $client_upgraded++ },
    on_error => sub { die "Test failed early - $_[-1]" },
 );
@@ -75,3 +76,5 @@ $client_proto->write( "Reply a line\n" );
 wait_for { @server_lines };
 
 is( $server_lines[0], "Reply a line", 'Line received by server' );
+
+done_testing;

@@ -16,8 +16,6 @@ use POSIX qw( WEXITSTATUS );
 system( "socat -help >/dev/null 2>&1" ) == 0 or
    plan skip_all => "no socat";
 
-plan tests => 3;
-
 my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
@@ -110,3 +108,5 @@ is( $local_lines[0], "Reply a line", 'Line received by local socket' );
 
 undef @socat_lines;
 undef @local_lines;
+
+done_testing;

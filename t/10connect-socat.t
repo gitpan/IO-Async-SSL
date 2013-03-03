@@ -16,8 +16,6 @@ use POSIX qw( WEXITSTATUS );
 system( "socat -help >/dev/null 2>&1" ) == 0 or
    plan skip_all => "no socat";
 
-plan tests => 3;
-
 my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
@@ -67,6 +65,8 @@ $loop->SSL_connect(
    host    => "localhost",
    service => "4434",
 
+   SSL_verify_mode => 0,
+
    on_connected => sub { $sslsock = shift },
 
    on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
@@ -107,3 +107,5 @@ is( $local_lines[0], "Reply a line", 'Line received by local socket' );
 
 undef @socat_lines;
 undef @local_lines;
+
+done_testing;

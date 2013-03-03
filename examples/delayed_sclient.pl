@@ -3,14 +3,23 @@
 use strict;
 use warnings;
 
+use Getopt::Long;
 use IO::Async::Loop;
 use IO::Async::Protocol::Stream;
 use IO::Async::Signal;
-use IO::Async::Stream;
+use IO::Async::Stream 0.54; # ->new_close_future
 use IO::Async::SSL;
 use IO::Async::SSLStream;
 
 my $CRLF = "\x0d\x0a"; # because \r\n is not portable
+
+my $DUMPCERT;
+my $FAMILY;
+GetOptions(
+   'd|dumpcert' => \$DUMPCERT,
+   '4|ipv4'     => sub { $FAMILY = "inet" },
+   '6|ipv6'     => sub { $FAMILY = "inet6" },
+) or exit 1;
 
 my $HOST = shift @ARGV or die "Need HOST";
 my $PORT = shift @ARGV or die "Need PORT";
@@ -21,8 +30,10 @@ my ( $socketstream, $stdiostream );
 my $peeraddr;
 
 $loop->connect(
-   host    => $HOST,
-   service => $PORT,
+   host     => $HOST,
+   service  => $PORT,
+   family   => $FAMILY,
+   socktype => 'stream',
 
    on_stream => sub {
       $socketstream = shift;
@@ -38,12 +49,6 @@ $loop->connect(
 );
 
 $loop->loop_once until defined $socketstream;
-
-my $quit_mergepoint = IO::Async::MergePoint->new(
-   needs => [qw[ socket stdio ]],
-
-   on_finished => sub { $loop->loop_stop },
-);
 
 my $socketproto = IO::Async::Protocol::Stream->new(
    transport => $socketstream,
@@ -61,7 +66,6 @@ my $socketproto = IO::Async::Protocol::Stream->new(
 
    on_closed => sub {
       print STDERR "Closed connection to $peeraddr\n";
-      $quit_mergepoint->done( 'socket' );
       $stdiostream->close_when_empty;
    },
 );
@@ -83,7 +87,6 @@ $stdiostream = IO::Async::Stream->new(
    },
 
    on_closed => sub {
-      $quit_mergepoint->done( 'stdio' );
       $socketproto->close_when_empty;
    },
 );
@@ -98,6 +101,11 @@ my $signal = IO::Async::Signal->new(
       $socketproto->SSL_upgrade(
          on_upgraded => sub {
             print STDERR "Now upgraded to SSL\n"; # TODO: get actual name somehow?
+
+            if( $DUMPCERT ) {
+               my $socket = $socketproto->transport->read_handle;
+               print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
+            }
          },
 
          on_error => sub {
@@ -108,4 +116,4 @@ my $signal = IO::Async::Signal->new(
 );
 $loop->add( $signal );
 
-$loop->loop_forever;
+$loop->await( $socketproto->transport->new_close_future, $stdiostream->new_close_future );

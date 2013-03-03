@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 5;
+use Test::More;
 
 use IO::Async::Test;
 
@@ -36,6 +36,7 @@ testing_loop( $loop );
 
    $loop->SSL_upgrade(
       handle => $client_sock,
+      SSL_verify_mode => 0,
 
       on_upgraded => sub { $client_upgraded++ },
       on_error => sub { die "Test failed early - $_[-1]" },
@@ -90,6 +91,7 @@ testing_loop( $loop );
    my $client_errored;
    $loop->SSL_upgrade(
       handle => $client_sock,
+      SSL_verify_mode => 0,
 
       on_upgraded => sub { die "Test failed early - SSL upgrade succeeded" },
       on_error => sub { $client_errored++ },
@@ -126,3 +128,5 @@ testing_loop( $loop );
 
    ok( 1, "Server socket indicates error" );
 }
+
+done_testing;

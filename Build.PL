@@ -6,14 +6,18 @@ use Module::Build;
 my $build = Module::Build->new(
    module_name => 'IO::Async::SSL',
    requires => {
-      'IO::Async' => 0,
+      'IO::Async::Loop' => '0.54',
       'IO::Async::Handle' => '0.29',
       'IO::Async::Protocol::Stream' => 0,
       'IO::Socket::SSL' => 0,
    },
-   build_requires => {
-      'Test::More' => 0,
+   recommends => {
+      'Mozilla::CA' => 0,
    },
+   build_requires => {
+      'Test::More' => '0.88', # done_testing
+   },
+   auto_configure_requires => 0, # Don't add M::B to configure_requires
    license => 'perl',
    create_makefile_pl => 'traditional',
    create_license => 1,

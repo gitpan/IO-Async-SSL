@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 11;
+use Test::More;
 
 use IO::Async::Test;
 
@@ -46,6 +46,8 @@ testing_loop( $loop );
       family  => "inet",
       host    => "localhost",
       service => $port,
+
+      SSL_verify_mode => 0,
 
       on_connected => sub { $connected_sock = shift },
 
@@ -166,6 +168,8 @@ SKIP: {
       host    => "localhost",
       service => $port,
 
+      SSL_verify_mode => 0,
+
       on_connected => sub { $connected_sock = shift },
 
       on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
@@ -217,6 +221,8 @@ SKIP: {
       host    => "localhost",
       service => $port,
 
+      SSL_verify_mode => 0,
+
       on_connected => sub { $connected_sock = shift },
 
       on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
@@ -259,6 +265,8 @@ SKIP: {
       family  => "inet",
       host    => "localhost",
       service => $port,
+
+      SSL_verify_mode => 0,
 
       on_connected => sub { $connected_sock = shift },
 
@@ -322,3 +330,5 @@ SKIP: {
 
    ok( 1, "Server socket indicates error" );
 }
+
+done_testing;

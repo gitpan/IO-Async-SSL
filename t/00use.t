@@ -3,7 +3,9 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+use Test::More;
 
 use_ok( 'IO::Async::SSL' );
 use_ok( 'IO::Async::SSLStream' );
+
+done_testing;

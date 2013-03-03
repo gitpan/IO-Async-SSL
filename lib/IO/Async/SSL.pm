@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
 
 package IO::Async::SSL;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
@@ -19,7 +19,7 @@ use IO::Async::Handle 0.29;
 
 =head1 NAME
 
-C<IO::Async::SSL> - Use SSL/TLS with L<IO::Async>
+C<IO::Async::SSL> - use SSL/TLS with L<IO::Async>
 
 =head1 SYNOPSIS
 
@@ -42,7 +42,7 @@ C<IO::Async::SSL> - Use SSL/TLS with L<IO::Async>
        );
 
        $loop->add( $stream );
-       
+
        ...
     },
 
@@ -62,7 +62,39 @@ C<IO::Socket::SSL>-upgraded socket handles or L<IO::Async::SSLStream>
 instances, and two forms of C<SSL_upgrade> to upgrade an existing TCP
 connection to use SSL.
 
+As an additional convenience, if the C<SSL_verify_mode> and C<SSL_ca_file>
+options are omitted, the module will attempt to load L<Mozilla::CA> and, if
+successful, use it to set C<SSL_VERIFY_PEER>. If C<Mozilla::CA> cannot be
+loaded then it will set C<SSL_VERIFY_NONE>.
+
 =cut
+
+my $have_Mozilla_CA;
+
+sub _SSL_args
+{
+   my %args = @_;
+
+   # SSL clients (i.e. non-server) require a verify mode
+   if( !$args{SSL_server} and !defined $args{SSL_verify_mode} and
+       !defined $args{SSL_ca_file} and !defined $args{SSL_ca_path} ) {
+      # Try to load Mozilla::CA; but if it fails remember that so we don't
+      # reload it repeatedly
+      defined $have_Mozilla_CA or
+         $have_Mozilla_CA = eval { require Mozilla::CA } || 0;
+
+      if( $have_Mozilla_CA ) {
+         $args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_PEER();
+         $args{SSL_ca_file}     = Mozilla::CA::SSL_ca_file();
+      }
+      else {
+         carp "Unable to set SSL_VERIFY_PEER because Mozilla::CA is unavailable";
+         $args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_NONE();
+      }
+   }
+
+   return %args;
+}
 
 =head1 LOOP METHODS
 
@@ -122,7 +154,7 @@ sub IO::Async::Loop::SSL_upgrade
 
    my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
 
-   $socket = IO::Socket::SSL->start_SSL( $socket, 
+   $socket = IO::Socket::SSL->start_SSL( $socket, _SSL_args
       SSL_startHandshake => 0,
 
       # Required to make IO::Socket::SSL not ->close before we have a chance to remove it from the loop
@@ -223,7 +255,7 @@ sub IO::Async::Loop::SSL_connect
          my ( $socket ) = @_;
 
          $loop->SSL_upgrade(
-            %ssl_params,
+            _SSL_args( %ssl_params ),
 
             handle => $socket,
 
@@ -299,8 +331,7 @@ sub IO::Async::Loop::SSL_listen
          my ( $socket ) = @_;
 
          $loop->SSL_upgrade(
-            SSL_server => 1,
-            %ssl_params,
+            _SSL_args( SSL_server => 1, %ssl_params ),
 
             handle => $socket,
 

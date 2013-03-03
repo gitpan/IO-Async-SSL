@@ -1,5 +1,9 @@
 Revision history for IO-Async-SSL
 
+0.07    CHANGES:
+         * Updated for IO::Async 0.54 - use Futures instead of IaMergePoint
+         * Attempt to use Mozilla::CA to set SSL_verify_mode and SSL_ca_file
+
 0.06    BUGFIXES:
          * Make sure to pass 'socktype' hint to ->connect or ->listen during
            testing

@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 2;
+use Test::More;
 
 use IO::Async::Test;
 
@@ -42,6 +42,8 @@ $loop->SSL_connect(
    family  => "inet",
    host    => "localhost",
    service => "4433",
+
+   SSL_verify_mode => 0,
 
    on_stream => sub { $c_stream = shift },
 
@@ -83,3 +85,5 @@ $c_stream->write( "Reply a line\n" );
 wait_for { @a_lines };
 
 is( $a_lines[0], "Reply a line", 'Line received by local socket' );
+
+done_testing;
