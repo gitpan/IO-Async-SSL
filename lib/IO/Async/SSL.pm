@@ -8,7 +8,7 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use Carp;
 
@@ -62,14 +62,18 @@ C<IO::Socket::SSL>-upgraded socket handles or L<IO::Async::SSLStream>
 instances, and two forms of C<SSL_upgrade> to upgrade an existing TCP
 connection to use SSL.
 
-As an additional convenience, if the C<SSL_verify_mode> and C<SSL_ca_file>
-options are omitted, the module will attempt to load L<Mozilla::CA> and, if
-successful, use it to set C<SSL_VERIFY_PEER>. If C<Mozilla::CA> cannot be
-loaded then it will set C<SSL_VERIFY_NONE>.
+As an additional convenience, if the C<SSL_verify_mode> and C<SSL_ca_*>
+options are omitted, the module will attempt to provide them. If the
+F</etc/ssl/certs> directory exists, it will be used. Failing that, if
+L<Mozilla::CA> can be loaded, that will be used. Otherwise, the module will
+print a warning and set C<SSL_VERIFY_NONE> instead.
 
 =cut
 
-my $have_Mozilla_CA;
+# Linux etc.. often stores SSL certs here
+# TODO: Make this a property of IO::Async::OS
+my $SSL_ca_path = "/etc/ssl/certs";
+my %SSL_ca_args;
 
 sub _SSL_args
 {
@@ -80,17 +84,22 @@ sub _SSL_args
        !defined $args{SSL_ca_file} and !defined $args{SSL_ca_path} ) {
       # Try to load Mozilla::CA; but if it fails remember that so we don't
       # reload it repeatedly
-      defined $have_Mozilla_CA or
-         $have_Mozilla_CA = eval { require Mozilla::CA } || 0;
+      unless( %SSL_ca_args ) {
+         if( -d $SSL_ca_path ) {
+            $SSL_ca_args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_PEER();
+            $SSL_ca_args{SSL_ca_path}     = $SSL_ca_path;
+         }
+         elsif( eval { require Mozilla::CA } ) {
+            $SSL_ca_args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_PEER();
+            $SSL_ca_args{SSL_ca_file}     = Mozilla::CA::SSL_ca_file();
+         }
+         else {
+            carp "Unable to set SSL_VERIFY_PEER because Mozilla::CA is unavailable";
+            $SSL_ca_args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_NONE();
+         }
+      }
 
-      if( $have_Mozilla_CA ) {
-         $args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_PEER();
-         $args{SSL_ca_file}     = Mozilla::CA::SSL_ca_file();
-      }
-      else {
-         carp "Unable to set SSL_VERIFY_PEER because Mozilla::CA is unavailable";
-         $args{SSL_verify_mode} = IO::Socket::SSL::SSL_VERIFY_NONE();
-      }
+      %args = ( %SSL_ca_args, %args );
    }
 
    return %args;
@@ -161,7 +170,7 @@ sub IO::Async::Loop::SSL_upgrade
       SSL_error_trap => sub { },
 
       %ssl_params,
-   ) or return $on_error->( "$!" );
+   ) or return $on_error->( IO::Socket::SSL::errstr() );
 
    my $ready_method = $ssl_params{SSL_server} ? "accept_SSL" : "connect_SSL";
 
@@ -174,7 +183,7 @@ sub IO::Async::Loop::SSL_upgrade
       }
 
       if( $! != EAGAIN ) {
-         my $errstr = "$!";
+         my $errstr = IO::Socket::SSL::errstr();
          $loop->remove( $self );
          $on_error->( $errstr );
          return;

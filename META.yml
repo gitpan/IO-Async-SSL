@@ -14,10 +14,10 @@ name: IO-Async-SSL
 provides:
   IO::Async::SSL:
     file: lib/IO/Async/SSL.pm
-    version: 0.07
+    version: 0.08
   IO::Async::SSLStream:
     file: lib/IO/Async/SSLStream.pm
-    version: 0.07
+    version: 0.08
 recommends:
   Mozilla::CA: 0
 requires:
@@ -27,4 +27,4 @@ requires:
   IO::Socket::SSL: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.07
+version: 0.08

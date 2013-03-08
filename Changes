@@ -1,5 +1,8 @@
 Revision history for IO-Async-SSL
 
+0.08    CHANGES:
+         * Prefer the /etc/ssl/certs directory if it exists, for SSL_ca_path.
+
 0.07    CHANGES:
          * Updated for IO::Async 0.54 - use Futures instead of IaMergePoint
          * Attempt to use Mozilla::CA to set SSL_verify_mode and SSL_ca_file

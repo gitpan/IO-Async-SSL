@@ -40,10 +40,11 @@ DESCRIPTION
     instances, and two forms of `SSL_upgrade' to upgrade an existing TCP
     connection to use SSL.
 
-    As an additional convenience, if the `SSL_verify_mode' and `SSL_ca_file'
-    options are omitted, the module will attempt to load Mozilla::CA and, if
-    successful, use it to set `SSL_VERIFY_PEER'. If `Mozilla::CA' cannot be
-    loaded then it will set `SSL_VERIFY_NONE'.
+    As an additional convenience, if the `SSL_verify_mode' and `SSL_ca_*'
+    options are omitted, the module will attempt to provide them. If the
+    /etc/ssl/certs directory exists, it will be used. Failing that, if
+    Mozilla::CA can be loaded, that will be used. Otherwise, the module will
+    print a warning and set `SSL_VERIFY_NONE' instead.
 
 LOOP METHODS
     The following extra methods are added to IO::Async::Loop.

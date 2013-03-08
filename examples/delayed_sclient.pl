@@ -11,8 +11,6 @@ use IO::Async::Stream 0.54; # ->new_close_future
 use IO::Async::SSL;
 use IO::Async::SSLStream;
 
-my $CRLF = "\x0d\x0a"; # because \r\n is not portable
-
 my $DUMPCERT;
 my $FAMILY;
 GetOptions(
@@ -56,10 +54,10 @@ my $socketproto = IO::Async::Protocol::Stream->new(
    on_read => sub {
       my ( undef, $buffref, $closed ) = @_;
 
-      if( $$buffref =~ s/^(.*)$CRLF// ) {
-         $stdiostream->write( $1 . "\n" );
-         return 1;
-      }
+      # Turn CRLFs into plain \n by stripping \r
+      $$buffref =~ s/\r//g;
+      $stdiostream->write( $$buffref );
+      $$buffref = "";
 
       return 0;
    },
@@ -78,16 +76,16 @@ $stdiostream = IO::Async::Stream->new(
    on_read => sub {
       my ( undef, $buffref, $closed ) = @_;
 
-      if( $$buffref =~ s/^(.*)\n// ) {
-         $socketproto->write( $1 . $CRLF );
-         return 1;
-      }
+      # Turn plain \n into CRLFs
+      $$buffref =~ s/\n/\x0d\x0a/g;
+      $socketproto->write( $$buffref );
+      $$buffref = "";
 
       return 0;
    },
 
    on_closed => sub {
-      $socketproto->close_when_empty;
+      $socketproto->transport->close_when_empty;
    },
 );
 $loop->add( $stdiostream );
