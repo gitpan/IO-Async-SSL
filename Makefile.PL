@@ -7,6 +7,7 @@ WriteMakefile
   'PREREQ_PM' => {
                    'IO::Async::Handle' => '0.29',
                    'IO::Async::Loop' => '0.54',
+                   'IO::Async::OS' => 0,
                    'IO::Async::Protocol::Stream' => 0,
                    'IO::Socket::SSL' => 0,
                    'Test::More' => '0.88'

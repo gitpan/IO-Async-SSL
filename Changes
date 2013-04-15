@@ -1,5 +1,9 @@
 Revision history for IO-Async-SSL
 
+0.09    BUGFIXES:
+         * Use IO::Async::OS->socketpair instead of $loop->socketpair
+           (thanks Tom Molesworth) (RT84638)
+
 0.08    CHANGES:
          * Prefer the /etc/ssl/certs directory if it exists, for SSL_ca_path.
 

@@ -7,6 +7,7 @@ use Test::More;
 
 use IO::Async::Test;
 
+use IO::Async::OS;
 use IO::Async::Loop;
 use IO::Async::SSL;
 use IO::Async::SSLStream;
@@ -40,7 +41,7 @@ $loop->SSL_listen(
 
 wait_for { defined $listen_sock };
 
-my ( $my_rd, $ssl_wr, $ssl_rd, $my_wr ) = $loop->pipequad
+my ( $my_rd, $ssl_wr, $ssl_rd, $my_wr ) = IO::Async::OS->pipequad
    or die "Cannot pipequad - $!";
 
 my $kid = $loop->spawn_child(

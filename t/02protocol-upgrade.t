@@ -7,6 +7,7 @@ use Test::More;
 
 use IO::Async::Test;
 
+use IO::Async::OS;
 use IO::Async::Loop;
 use IO::Async::SSL;
 use IO::Async::SSLStream;
@@ -16,7 +17,7 @@ my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
 
-my ( $server_sock, $client_sock ) = $loop->socketpair or
+my ( $server_sock, $client_sock ) = IO::Async::OS->socketpair or
    die "Cannot socketpair - $!";
 
 $server_sock->blocking( 0 );
