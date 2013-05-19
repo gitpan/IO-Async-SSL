@@ -16,6 +16,7 @@ t/02protocol-upgrade.t
 t/03cross.t
 t/10connect-openssl.t
 t/10connect-socat.t
+t/11listen-openssl.t
 t/11listen-socat.t
 t/20stream.t
 t/99pod.t

@@ -21,6 +21,10 @@ my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
 
+my $port = do {
+   IO::Socket::INET->new( LocalPort => 0, Listen => 1 )->sockport
+};
+
 my ( $my_rd, $ssl_wr, $ssl_rd, $my_wr ) = IO::Async::OS->pipequad
    or die "Cannot pipequad - $!";
 
@@ -30,7 +34,7 @@ my $kid = $loop->spawn_child(
       stdin  => $ssl_rd,
       stdout => $ssl_wr,
    ],
-   command => [ "socat", "OPENSSL-LISTEN:4434,cert=server.pem,key=privkey.pem,verify=0", "STDIO" ],
+   command => [ "socat", "OPENSSL-LISTEN:$port,cert=server.pem,key=privkey.pem,verify=0", "STDIO" ],
    on_exit => sub {
       my ( $pid, $exitcode ) = @_;
 
@@ -64,7 +68,7 @@ my $sslsock;
 $loop->SSL_connect(
    family  => "inet",
    host    => "localhost",
-   service => "4434",
+   service => $port,
 
    SSL_verify_mode => 0,
 

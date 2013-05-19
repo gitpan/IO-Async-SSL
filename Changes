@@ -1,5 +1,10 @@
 Revision history for IO-Async-SSL
 
+0.10    BUGFIXES:
+         * Allocate port numbers for external binary tests dynamically so that
+           concurrent unit tests can proceed (RT85301)
+         * Added a unit test that tests listening for openssl s_client
+
 0.09    BUGFIXES:
          * Use IO::Async::OS->socketpair instead of $loop->socketpair
            (thanks Tom Molesworth) (RT84638)
