@@ -49,16 +49,25 @@ DESCRIPTION
 LOOP METHODS
     The following extra methods are added to IO::Async::Loop.
 
-  $loop->SSL_upgrade( %params )
+  $loop->SSL_upgrade( %params ) ==> $sslsocket
     This method upgrades a given stream filehandle into an SSL-wrapped
-    stream, and will invoke the `on_upgraded' continuation when the handle
-    is ready.
+    stream, returning a future which will yield an upgraded
+    `IO::Socket::SSL'.
 
     Takes the following parameters:
 
     handle => IO
             The IO handle of an already-established connection to act as the
             transport for SSL.
+
+    SSL_server => BOOL
+            If true, indicates this is the server side of the connection.
+
+    In addition, any parameter whose name starts `SSL_' will be passed to
+    the `IO::Socket::SSL' constructor.
+
+    The following legacy callback arguments are also supported, in case the
+    returned future is not used:
 
     on_upgraded => CODE
             A continuation that is invoked when the socket has been
@@ -74,18 +83,10 @@ LOOP METHODS
 
              $on_error->( $! )
 
-    SSL_server => BOOL
-            If true, indicates this is the server side of the connection.
-
-    In addition, any parameter whose name starts `SSL_' will be passed to
-    the `IO::Socket::SSL' constructor.
-
-  $loop->SSL_connect( %params )
+  $loop->SSL_connect( %params ) ==> $stream
     This method performs a non-blocking connection to a given address or set
-    of addresses, upgrades the socket to SSL, then invokes the continuation
-    when the SSL handshake is complete. This can be either the
-    `on_connected' or `on_stream' continuation; `on_socket' is not
-    supported.
+    of addresses, upgrades the socket to SSL, then yields a
+    `IO::Async::Stream' object when the SSL handshake is complete.
 
     It takes all the same arguments as `IO::Async::Loop::connect()'. Any
     argument whose name starts `SSL_' will be passed on to the
@@ -93,7 +94,15 @@ LOOP METHODS
     is not required to pass the `socktype' option, as SSL implies this will
     be `stream'.
 
-    In addition, the following arguments are required:
+    This method can also upgrade an existing `IO::Async::Stream' or subclass
+    instance given as the `handle' argument, by setting the `reader' and
+    `writer' functions.
+
+  $loop->SSL_connect( %params )
+    When not returning a future, this method also supports the
+    `on_connected' and `on_stream' continuations.
+
+    In addition, the following arguments are then required:
 
     on_ssl_error => CODE
             A continuation that is invoked if `IO::Socket::SSL' detects an
@@ -108,7 +117,7 @@ LOOP METHODS
     This method sets up a listening socket using the addresses given, and
     will invoke the callback each time a new connection is accepted on the
     socket and the SSL handshake has been completed. This can be either the
-    `on_accepted' or `on_stream' continuation; `on_socket' is not supported.
+    `on_accept' or `on_stream' continuation; `on_socket' is not supported.
 
     It takes all the same arguments as `IO::Async::Loop::listen()'. Any
     argument whose name starts `SSL_' will be passed on to the
@@ -126,7 +135,7 @@ LOOP METHODS
     and certificate for a server-mode socket. See its documentation for more
     details.
 
-    If the `on_accepted' continuation is used, the socket handle it yields
+    If the `on_accept' continuation is used, the socket handle it yields
     will be a `IO::Socket::SSL', which must be wrapped in
     `IO::Async::SSLStream' to be used by `IO::Async'. The `on_stream'
     continuation will already yield such an instance.

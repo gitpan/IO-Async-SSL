@@ -8,7 +8,7 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use Carp;
 
@@ -16,6 +16,7 @@ use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );
 
 use IO::Async::Handle 0.29;
+use IO::Async::Loop 0.59;
 
 =head1 NAME
 
@@ -111,10 +112,10 @@ The following extra methods are added to L<IO::Async::Loop>.
 
 =cut
 
-=head2 $loop->SSL_upgrade( %params )
+=head2 $loop->SSL_upgrade( %params ) ==> $sslsocket
 
-This method upgrades a given stream filehandle into an SSL-wrapped stream, and
-will invoke the C<on_upgraded> continuation when the handle is ready.
+This method upgrades a given stream filehandle into an SSL-wrapped stream,
+returning a future which will yield an upgraded C<IO::Socket::SSL>.
 
 Takes the following parameters:
 
@@ -124,6 +125,20 @@ Takes the following parameters:
 
 The IO handle of an already-established connection to act as the transport
 for SSL.
+
+=item SSL_server => BOOL
+
+If true, indicates this is the server side of the connection.
+
+=back
+
+In addition, any parameter whose name starts C<SSL_> will be passed to the
+C<IO::Socket::SSL> constructor.
+
+The following legacy callback arguments are also supported, in case the
+returned future is not used:
+
+=over 8
 
 =item on_upgraded => CODE
 
@@ -140,14 +155,7 @@ negotiating the upgrade.
 
  $on_error->( $! )
 
-=item SSL_server => BOOL
-
-If true, indicates this is the server side of the connection.
-
 =back
-
-In addition, any parameter whose name starts C<SSL_> will be passed to the
-C<IO::Socket::SSL> constructor.
 
 =cut
 
@@ -156,10 +164,19 @@ sub IO::Async::Loop::SSL_upgrade
    my $loop = shift;
    my %params = @_;
 
+   my $f = $loop->new_future;
+
    my $socket = delete $params{handle} or croak "Expected 'handle'";
 
-   my $on_upgraded = delete $params{on_upgraded} or croak "Expected 'on_upgraded'";
-   my $on_error    = delete $params{on_error}    or croak "Expected 'on_error'";
+   {
+      my $on_upgraded = delete $params{on_upgraded} or defined wantarray
+         or croak "Expected 'on_upgraded' or to return a Future";
+      my $on_error    = delete $params{on_error}    or defined wantarray
+         or croak "Expected 'on_error' or to return a Future";
+
+      $f->on_done( $on_upgraded ) if $on_upgraded;
+      $f->on_fail( $on_error    ) if $on_error;
+   }
 
    my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
 
@@ -170,7 +187,7 @@ sub IO::Async::Loop::SSL_upgrade
       SSL_error_trap => sub { },
 
       %ssl_params,
-   ) or return $on_error->( IO::Socket::SSL::errstr() );
+   ) or return $f->fail( IO::Socket::SSL::errstr(), "ssl" );
 
    my $ready_method = $ssl_params{SSL_server} ? "accept_SSL" : "connect_SSL";
 
@@ -178,14 +195,14 @@ sub IO::Async::Loop::SSL_upgrade
       my ( $self ) = @_;
       if( $socket->$ready_method ) {
          $loop->remove( $self );
-         $on_upgraded->( $socket );
+         $f->done( $socket );
          return;
       }
 
       if( $! != EAGAIN ) {
          my $errstr = IO::Socket::SSL::errstr();
          $loop->remove( $self );
-         $on_error->( $errstr );
+         $f->fail( $errstr, "ssl" );
          return;
       }
 
@@ -200,21 +217,31 @@ sub IO::Async::Loop::SSL_upgrade
    ) );
 
    $ready->( $handle );
+
+   return $f;
 }
 
-=head2 $loop->SSL_connect( %params )
+=head2 $loop->SSL_connect( %params ) ==> $stream
 
 This method performs a non-blocking connection to a given address or set of
-addresses, upgrades the socket to SSL, then invokes the continuation when the
-SSL handshake is complete. This can be either the C<on_connected> or
-C<on_stream> continuation; C<on_socket> is not supported.
+addresses, upgrades the socket to SSL, then yields a C<IO::Async::Stream>
+object when the SSL handshake is complete.
 
 It takes all the same arguments as C<IO::Async::Loop::connect()>. Any argument
 whose name starts C<SSL_> will be passed on to the L<IO::Socket::SSL>
 constructor rather than the Loop's C<connect> method. It is not required to
 pass the C<socktype> option, as SSL implies this will be C<stream>.
 
-In addition, the following arguments are required:
+This method can also upgrade an existing C<IO::Async::Stream> or subclass
+instance given as the C<handle> argument, by setting the C<reader> and
+C<writer> functions.
+
+=head2 $loop->SSL_connect( %params )
+
+When not returning a future, this method also supports the C<on_connected> and
+C<on_stream> continuations.
+
+In addition, the following arguments are then required:
 
 =over 8
 
@@ -239,47 +266,65 @@ sub IO::Async::Loop::SSL_connect
 
    my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
 
-   my $on_connected;
+   my $on_done;
    if( exists $params{on_connected} ) {
-      $on_connected = delete $params{on_connected};
+      my $on_connected = delete $params{on_connected};
+      $on_done = sub {
+         my ( $stream ) = @_;
+         $on_connected->( $stream->read_handle );
+      };
    }
    elsif( exists $params{on_stream} ) {
       my $on_stream = delete $params{on_stream};
-      require IO::Async::SSLStream;
-      $on_connected = sub {
-         my ( $handle ) = @_;
-         $on_stream->( IO::Async::SSLStream->new( handle => $handle ) );
-      };
+      $on_done = $on_stream;
    }
    else {
-      croak "Expected 'on_connected' or 'on_stream'";
+      croak "Expected 'on_connected' or 'on_stream' or to return a Future" unless defined wantarray;
    }
 
-   my $on_ssl_error = delete $params{on_ssl_error} or croak "Expected 'on_ssl_error'";
+   my $on_ssl_error = delete $params{on_ssl_error} or defined wantarray or
+      croak "Expected 'on_ssl_error' or to return a Future";
 
-   $loop->connect(
+   require IO::Async::SSLStream;
+   $params{handle} ||= IO::Async::Stream->new;
+
+   if( $params{handle} ) {
+      $params{handle}->isa( "IO::Async::Stream" ) or
+         croak "Can only SSL_connect a handle instance of IO::Async::Stream";
+   }
+
+   my $f = $loop->connect(
       socktype => 'stream', # SSL over DGRAM or RAW makes no sense
       %params,
-      on_connected => sub {
-         my ( $socket ) = @_;
+   )->and_then( sub {
+      my $f = shift;
+      my $stream = $f->get;
 
-         $loop->SSL_upgrade(
-            _SSL_args( %ssl_params ),
+      $loop->SSL_upgrade(
+         _SSL_args( %ssl_params ),
+         handle => $stream->read_handle,
+      )->then( sub { $f } ); # return the actual stream
+   })->on_done( sub {
+      my ( $stream ) = @_;
+      $stream->configure(
+         reader => \&IO::Async::SSLStream::sslread,
+         writer => \&IO::Async::SSLStream::sslwrite,
+      );
+   });
 
-            handle => $socket,
+   $f->on_done( $on_done ) if $on_done;
+   $f->on_fail( sub {
+      $on_ssl_error->( $_[0] ) if defined $_[1] and $_[1] eq "ssl";
+   }) if $on_ssl_error;
 
-            on_upgraded => $on_connected,
-            on_error    => $on_ssl_error,
-         );
-      },
-   );
+   return $f;
 }
 
 =head2 $loop->SSL_listen( %params )
 
 This method sets up a listening socket using the addresses given, and will
 invoke the callback each time a new connection is accepted on the socket and
-the SSL handshake has been completed. This can be either the C<on_accepted> or
+the SSL handshake has been completed. This can be either the C<on_accept> or
 C<on_stream> continuation; C<on_socket> is not supported.
 
 It takes all the same arguments as C<IO::Async::Loop::listen()>. Any argument
@@ -301,10 +346,10 @@ error once the actual stream socket is connected.
 The underlying L<IO::Socket::SSL> socket will also require the server key and
 certificate for a server-mode socket. See its documentation for more details.
 
-If the C<on_accepted> continuation is used, the socket handle it yields will
-be a C<IO::Socket::SSL>, which must be wrapped in C<IO::Async::SSLStream> to
-be used by C<IO::Async>. The C<on_stream> continuation will already yield such
-an instance.
+If the C<on_accept> continuation is used, the socket handle it yields will be
+a C<IO::Socket::SSL>, which must be wrapped in C<IO::Async::SSLStream> to be
+used by C<IO::Async>. The C<on_stream> continuation will already yield such an
+instance.
 
 =cut
 

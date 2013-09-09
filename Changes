@@ -1,5 +1,16 @@
 Revision history for IO-Async-SSL
 
+0.11    2013/09/09 13:32:49
+        [CHANGES]
+         * Perform SSL_upgrade and SSL_connect primarily on futures
+         * Allow SSL_connect on an existing Stream object, by using
+           reader/writer functions of IaStream 0.59
+
+        [BUGFIXES]
+         * No point waiting on writeready when syswrite already said it wants
+           readready
+         * Fix "on_accept" typo in docs (RT86867)
+
 0.10    BUGFIXES:
          * Allocate port numbers for external binary tests dynamically so that
            concurrent unit tests can proceed (RT85301)

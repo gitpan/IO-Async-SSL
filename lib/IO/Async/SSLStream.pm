@@ -1,15 +1,16 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
 
 package IO::Async::SSLStream;
 
 use strict;
 use warnings;
 use base qw( IO::Async::Stream );
+IO::Async::Stream->VERSION( '0.59' );
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );
@@ -33,46 +34,49 @@ See the main L<IO::Async::SSL> documentation for an example of its use.
 
 =cut
 
-sub _do_ssl_read
+sub _init
 {
    my $self = shift;
+   my ( $params ) = @_;
 
-   $self->SUPER::on_read_ready;
+   $params->{reader} = \&sslread;
+   $params->{writer} = \&sslwrite;
 
-   $self->{read_wants_write} = ( $! == EAGAIN && $SSL_ERROR == SSL_WANT_WRITE );
+   $self->SUPER::_init( $params );
 }
 
-sub _do_ssl_write
+sub sslread
 {
-   my $self = shift;
+   my $stream = shift;
+   my ( $fh, undef, $len ) = @_;
 
-   $self->SUPER::on_write_ready;
+   my $ret = $stream->_sysread( $fh, $_[1], $len );
 
-   $self->{write_wants_read} = ( $! == EAGAIN && $SSL_ERROR == SSL_WANT_READ );
-}
+   my $read_wants_write = !defined $ret && $! == EAGAIN && $SSL_ERROR == SSL_WANT_WRITE;
+   $stream->want_writeready_for_read( $read_wants_write );
 
-sub on_read_ready
-{
-   my $self = shift;
-
-   $self->_do_ssl_read;
-   $self->want_writeready( 1 ) if $self->{read_wants_write};
-
-   $self->_do_ssl_write if $self->{write_wants_read};
-
-   if( $self->read_handle and $self->read_handle->pending ) {
-      $self->get_loop->later( sub { $self->on_read_ready } );
+   # It's possible SSL_read took all the data out of the filehandle, thus
+   # making it not appear read-ready any more.
+   if( $fh->pending ) {
+      $stream->loop->later( sub { $stream->on_read_ready } );
    }
+
+   return $ret;
 }
 
-sub on_write_ready
+sub sslwrite
 {
-   my $self = shift;
+   my $stream = shift;
+   my ( $fh, $buf, $len ) = @_;
 
-   $self->_do_ssl_write;
-   $self->want_readready( 1 ) if $self->{write_wants_read};
+   my $ret = $stream->_syswrite( $fh, $_[1], $len );
 
-   $self->_do_ssl_read if $self->{read_wants_write};
+   my $write_wants_read = !defined $ret && $! == EAGAIN && $SSL_ERROR == SSL_WANT_READ;
+   $stream->want_readready_for_write( $write_wants_read );
+   # If write wants read, there's no point waiting on writereadiness either
+   $stream->want_writeready_for_write( !$write_wants_read );
+
+   return $ret;
 }
 
 =head1 BUGS

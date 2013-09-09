@@ -12,6 +12,8 @@ use IO::Async::SSL;
 use IO::Async::SSLStream;
 use Socket qw( unpack_sockaddr_in );
 
+use IO::Async::Stream 0.59;
+
 my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
@@ -42,7 +44,7 @@ testing_loop( $loop );
 
    my $connected_sock;
 
-   $loop->SSL_connect(
+   my $conn_f = $loop->SSL_connect(
       family  => "inet",
       host    => "localhost",
       service => $port,
@@ -50,13 +52,13 @@ testing_loop( $loop );
       SSL_verify_mode => 0,
 
       on_connected => sub { $connected_sock = shift },
-
-      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-      on_connect_error => sub { die "Cannot connect\n" },
-      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
    );
 
-   wait_for { defined $connected_sock and defined $accepted_sock };
+   wait_for { $conn_f->is_ready and defined $accepted_sock };
+
+   $conn_f->get if $conn_f->failure;
+
+   ok( defined $connected_sock, 'on_connected given a socket' );
 
    is_deeply( [ unpack_sockaddr_in $connected_sock->sockname ],
               [ unpack_sockaddr_in $accepted_sock->peername ],
@@ -117,8 +119,8 @@ testing_loop( $loop );
    # syswrite() more than we sysread(), so as to try to provoke a condition where
    # SSL_read() reads all the data from the socket, making it not read-ready, but
    # that we haven't yet got all the data at the on_read level.
-   local $IO::Async::Stream::WRITELEN = 16384;
-   local $IO::Async::Stream::READLEN  =   128;
+   $a_stream->configure( write_len => 16384, read_len => 128 );
+   $c_stream->configure( write_len => 16384, read_len => 128 );
 
    $a_stream->write( ("X" x 1024 ) . "\n" );
 

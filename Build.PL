@@ -9,6 +9,7 @@ my $build = Module::Build->new(
       'IO::Async::Loop' => '0.54',
       'IO::Async::Handle' => '0.29',
       'IO::Async::Protocol::Stream' => 0,
+      'IO::Async::Stream' => '0.59',
       'IO::Socket::SSL' => 0,
    },
    recommends => {

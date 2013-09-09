@@ -25,7 +25,7 @@ testing_loop( $loop );
 
    my ( $server_upgraded, $client_upgraded );
 
-   $loop->SSL_upgrade(
+   my $server_f = $loop->SSL_upgrade(
       handle => $server_sock,
       SSL_server => 1,
       SSL_key_file  => "t/privkey.pem",
@@ -35,7 +35,7 @@ testing_loop( $loop );
       on_error => sub { die "Test failed early - $_[-1]" },
    );
 
-   $loop->SSL_upgrade(
+   my $client_f = $loop->SSL_upgrade(
       handle => $client_sock,
       SSL_verify_mode => 0,
 
@@ -43,9 +43,13 @@ testing_loop( $loop );
       on_error => sub { die "Test failed early - $_[-1]" },
    );
 
-   wait_for { $server_upgraded and $client_upgraded };
+   ok( defined $server_f, 'defined ->SSL_upgrade Future for server' );
+   ok( defined $client_f, 'defined ->SSL_upgrade Future for client' );
 
-   ok( 1, "Sockets upgraded" );
+   wait_for { $server_f->is_ready and $client_f->is_ready };
+
+   ok( $server_upgraded, 'server upgraded' );
+   ok( $client_upgraded, 'client upgraded' );
 
    my @server_lines;
    my $server_stream = IO::Async::SSLStream->new(
@@ -90,7 +94,7 @@ testing_loop( $loop );
    $client_sock->blocking( 0 );
 
    my $client_errored;
-   $loop->SSL_upgrade(
+   my $f = $loop->SSL_upgrade(
       handle => $client_sock,
       SSL_verify_mode => 0,
 
@@ -100,9 +104,10 @@ testing_loop( $loop );
 
    $server_sock->syswrite( "A line of plaintext content\n" );
 
-   wait_for { $client_errored };
+   wait_for { $f->is_ready };
 
-   ok( 1, "Client socket indicates error" );
+   ok( scalar $f->failure, '$f indicates client upgrade failure' );
+   ok( $client_errored, 'on_error invoked for client upgrade failure' );
 }
 
 {
@@ -113,7 +118,7 @@ testing_loop( $loop );
    $client_sock->blocking( 0 );
 
    my $server_errored;
-   $loop->SSL_upgrade(
+   my $f = $loop->SSL_upgrade(
       handle => $server_sock,
       SSL_server => 1,
       SSL_key_file  => "t/privkey.pem",
@@ -125,9 +130,10 @@ testing_loop( $loop );
 
    $client_sock->syswrite( "A line of plaintext content\n" );
 
-   wait_for { $server_errored };
+   wait_for { $f->is_ready };
 
-   ok( 1, "Server socket indicates error" );
+   ok( scalar $f->failure, '$f indicates server upgrade failure' );
+   ok( $server_errored, 'on_error invoked for server upgrade failure' );
 }
 
 done_testing;
