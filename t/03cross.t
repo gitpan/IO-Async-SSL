@@ -135,9 +135,78 @@ testing_loop( $loop );
    is( length $a_lines[0], 1024, 'Data received by local socket without stall' );
 }
 
-SKIP: {
-   skip "IO::Async too old to support ->connect extension", 1 if $IO::Async::Loop::VERSION < '0.31';
+# ->connect with a given handle
+{
+   my $listen_sock;
+   my $accepted_sock;
 
+   $loop->SSL_listen(
+      family  => "inet",
+      host    => "localhost",
+      service => "",
+
+      SSL_key_file  => "t/privkey.pem",
+      SSL_cert_file => "t/server.pem",
+
+      on_listen => sub { $listen_sock = shift },
+      on_accept => sub { $accepted_sock = shift },
+
+      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
+      on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
+      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
+   );
+
+   wait_for { defined $listen_sock };
+
+   my $port = ( unpack_sockaddr_in $listen_sock->sockname )[0];
+
+   my @c_lines;
+   my $c_stream = IO::Async::Stream->new(
+      on_read => sub {
+         my ( $self, $buffref, $closed ) = @_;
+         push @c_lines, $1 while $$buffref =~ s/^(.*)\n//;
+         return 0;
+      },
+   );
+   $loop->add( $c_stream );
+
+   my $conn_f = $loop->SSL_connect(
+      family  => "inet",
+      host    => "localhost",
+      service => $port,
+
+      SSL_verify_mode => 0,
+
+      handle => $c_stream,
+   );
+
+   wait_for { $conn_f->is_ready and defined $accepted_sock };
+
+   $conn_f->get if $conn_f->failure;
+
+   my @a_lines;
+   my $a_stream = IO::Async::SSLStream->new(
+      handle => $accepted_sock,
+      on_read => sub {
+         my ( $self, $buffref, $closed ) = @_;
+         push @a_lines, $1 while $$buffref =~ s/^(.*)\n//;
+         return 0;
+      },
+   );
+   $loop->add( $a_stream );
+
+   $a_stream->write( "Send a line via 'handle'\n" );
+
+   wait_for { @c_lines };
+
+   is( $c_lines[0], "Send a line via 'handle'", 'Line received via handle' );
+
+   $loop->remove( $c_stream );
+   $loop->remove( $a_stream );
+}
+
+# $loop->connect( SSL )
+{
    my $listen_sock;
    my $accepted_sock;
 
@@ -186,9 +255,8 @@ SKIP: {
               'Sockets crossconnected using ->connect extensions' );
 }
 
-SKIP: {
-   skip "IO::Async too old to support ->listen extension", 1 if $IO::Async::Loop::VERSION < '0.40';
-
+# $loop->listen( SSL )
+{
    my $listen_sock;
    my $accepted_sock;
 
@@ -239,6 +307,7 @@ SKIP: {
               'Sockets crossconnected using ->listen extensions' );
 }
 
+# connect SSL error
 {
    my $listen_sock;
    my $accepted_sock;
@@ -286,6 +355,7 @@ SKIP: {
    ok( 1, "Client socket indicates error" );
 }
 
+# connect SSL error
 {
    my $listen_sock;
    my $server_errored;

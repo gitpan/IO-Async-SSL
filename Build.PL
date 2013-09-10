@@ -6,7 +6,7 @@ use Module::Build;
 my $build = Module::Build->new(
    module_name => 'IO::Async::SSL',
    requires => {
-      'IO::Async::Loop' => '0.54',
+      'IO::Async::Loop' => '0.59',
       'IO::Async::Handle' => '0.29',
       'IO::Async::Protocol::Stream' => 0,
       'IO::Async::Stream' => '0.59',

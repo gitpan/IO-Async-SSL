@@ -10,7 +10,7 @@ use warnings;
 use base qw( IO::Async::Stream );
 IO::Async::Stream->VERSION( '0.59' );
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );

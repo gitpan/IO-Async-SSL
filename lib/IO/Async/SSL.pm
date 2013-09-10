@@ -8,7 +8,7 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 
@@ -286,30 +286,36 @@ sub IO::Async::Loop::SSL_connect
       croak "Expected 'on_ssl_error' or to return a Future";
 
    require IO::Async::SSLStream;
-   $params{handle} ||= IO::Async::Stream->new;
 
-   if( $params{handle} ) {
-      $params{handle}->isa( "IO::Async::Stream" ) or
-         croak "Can only SSL_connect a handle instance of IO::Async::Stream";
-   }
+   my $stream = delete $params{handle} || IO::Async::Stream->new;
+
+   $stream->isa( "IO::Async::Stream" ) or
+      croak "Can only SSL_connect a handle instance of IO::Async::Stream";
+
+   # Don't ->connect with the handle yet, because we'll first have to use the
+   # socket to perform SSL_upgrade on. We don't want to confuse the loop by
+   # giving it the same fd twice.
 
    my $f = $loop->connect(
       socktype => 'stream', # SSL over DGRAM or RAW makes no sense
       %params,
-   )->and_then( sub {
-      my $f = shift;
-      my $stream = $f->get;
+   )->then( sub {
+      my ( $socket ) = @_;
 
       $loop->SSL_upgrade(
          _SSL_args( %ssl_params ),
-         handle => $stream->read_handle,
-      )->then( sub { $f } ); # return the actual stream
-   })->on_done( sub {
-      my ( $stream ) = @_;
+         handle => $socket,
+      )
+   })->then( sub {
+      my ( $socket ) = @_;
+
       $stream->configure(
+         handle => $socket,
          reader => \&IO::Async::SSLStream::sslread,
          writer => \&IO::Async::SSLStream::sslwrite,
       );
+
+      Future->new->done( $stream );
    });
 
    $f->on_done( $on_done ) if $on_done;

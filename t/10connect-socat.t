@@ -63,30 +63,19 @@ $loop->add( my $socat_stream = IO::Async::Stream->new(
 
 sleep 1; # This is a hack. Waiting for socat to start
 
-my $sslsock;
-
-$loop->SSL_connect(
+my $sslstream = $loop->SSL_connect(
    family  => "inet",
    host    => "localhost",
    service => $port,
 
    SSL_verify_mode => 0,
+)->get;
 
-   on_connected => sub { $sslsock = shift },
-
-   on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-   on_connect_error => sub { die "Cannot connect\n" },
-   on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
-);
-
-wait_for { defined $sslsock };
-
-ok( defined $sslsock, "Managed to connect\n" );
+ok( defined $sslstream, "Managed to connect\n" );
 
 my @local_lines;
 
-my $sslstream = IO::Async::SSLStream->new(
-   handle => $sslsock,
+$sslstream->configure(
    on_read => sub {
       my ( $self, $buffref, $closed ) = @_;
       push @local_lines, $1 while $$buffref =~ s/^(.*)\n//;
