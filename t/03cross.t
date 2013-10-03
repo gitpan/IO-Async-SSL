@@ -19,10 +19,9 @@ my $loop = IO::Async::Loop->new;
 testing_loop( $loop );
 
 {
-   my $listen_sock;
    my $accepted_sock;
 
-   $loop->SSL_listen(
+   my $listen_f = $loop->SSL_listen(
       family  => "inet",
       host    => "localhost",
       service => "",
@@ -30,15 +29,12 @@ testing_loop( $loop );
       SSL_key_file  => "t/privkey.pem",
       SSL_cert_file => "t/server.pem",
 
-      on_listen => sub { $listen_sock = shift },
       on_accept => sub { $accepted_sock = shift },
-
-      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-      on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
-      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
    );
 
-   wait_for { defined $listen_sock };
+   wait_for { $listen_f->is_ready };
+
+   my $listen_sock = $listen_f->get->read_handle;
 
    my $port = ( unpack_sockaddr_in $listen_sock->sockname )[0];
 
@@ -137,10 +133,9 @@ testing_loop( $loop );
 
 # ->connect with a given handle
 {
-   my $listen_sock;
    my $accepted_sock;
 
-   $loop->SSL_listen(
+   my $listen_f = $loop->SSL_listen(
       family  => "inet",
       host    => "localhost",
       service => "",
@@ -148,15 +143,12 @@ testing_loop( $loop );
       SSL_key_file  => "t/privkey.pem",
       SSL_cert_file => "t/server.pem",
 
-      on_listen => sub { $listen_sock = shift },
       on_accept => sub { $accepted_sock = shift },
-
-      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-      on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
-      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
    );
 
-   wait_for { defined $listen_sock };
+   wait_for { $listen_f->is_ready };
+
+   my $listen_sock = $listen_f->get->read_handle;
 
    my $port = ( unpack_sockaddr_in $listen_sock->sockname )[0];
 
@@ -257,10 +249,9 @@ testing_loop( $loop );
 
 # $loop->listen( SSL )
 {
-   my $listen_sock;
    my $accepted_sock;
 
-   $loop->listen(
+   my $listen_f = $loop->listen(
       extensions => [ 'SSL' ],
 
       family  => "inet",
@@ -270,21 +261,17 @@ testing_loop( $loop );
       SSL_key_file  => "t/privkey.pem",
       SSL_cert_file => "t/server.pem",
 
-      on_listen => sub { $listen_sock = shift },
       on_accept => sub { $accepted_sock = shift },
 
-      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-      on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
-      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
    );
 
-   wait_for { defined $listen_sock };
+   wait_for { $listen_f->is_ready };
+
+   my $listen_sock = $listen_f->get->read_handle;
 
    my $port = ( unpack_sockaddr_in $listen_sock->sockname )[0];
 
-   my $connected_sock;
-
-   $loop->connect(
+   my $conn_f = $loop->connect(
       extensions => [ 'SSL' ],
 
       family  => "inet",
@@ -292,15 +279,11 @@ testing_loop( $loop );
       service => $port,
 
       SSL_verify_mode => 0,
-
-      on_connected => sub { $connected_sock = shift },
-
-      on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-      on_connect_error => sub { die "Cannot connect\n" },
-      on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
    );
 
-   wait_for { defined $connected_sock and defined $accepted_sock };
+   wait_for { $conn_f->is_ready and defined $accepted_sock };
+
+   my $connected_sock = $conn_f->get->read_handle;
 
    is_deeply( [ unpack_sockaddr_in $connected_sock->sockname ],
               [ unpack_sockaddr_in $accepted_sock->peername ],

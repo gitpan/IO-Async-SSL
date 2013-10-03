@@ -24,32 +24,7 @@ my $loop = IO::Async::Loop->new;
 my ( $socketstream, $stdiostream );
 my $peeraddr;
 
-$loop->SSL_connect(
-   host    => $HOST,
-   service => $PORT,
-   family  => $FAMILY,
-
-   on_stream => sub {
-      $socketstream = shift;
-
-      my $socket = $socketstream->read_handle;
-      $peeraddr = $socket->peerhost . ":" . $socket->peerport;
-
-      print STDERR "Connected to $peeraddr\n";
-
-      if( $DUMPCERT ) {
-         print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
-      }
-   },
-
-   on_resolve_error => sub { die "Cannot resolve - $_[0]\n" },
-   on_connect_error => sub { die "Cannot connect\n" },
-   on_ssl_error     => sub { die "SSL error $_[-1]\n" },
-);
-
-$loop->loop_once until defined $socketstream;
-
-$socketstream->configure(
+$socketstream = IO::Async::Stream->new(
    on_read => sub {
       my ( undef, $buffref, $closed ) = @_;
 
@@ -88,5 +63,22 @@ $stdiostream = IO::Async::Stream->new(
    },
 );
 $loop->add( $stdiostream );
+
+$loop->SSL_connect(
+   host    => $HOST,
+   service => $PORT,
+   family  => $FAMILY,
+
+   handle => $socketstream,
+)->get;
+
+my $socket = $socketstream->read_handle;
+$peeraddr = $socket->peerhost . ":" . $socket->peerport;
+
+print STDERR "Connected to $peeraddr\n";
+
+if( $DUMPCERT ) {
+   print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
+}
 
 $loop->await( $socketstream->new_close_future, $stdiostream->new_close_future );

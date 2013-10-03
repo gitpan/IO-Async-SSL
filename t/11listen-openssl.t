@@ -20,24 +20,16 @@ my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
 
-my $listen_sock;
 my $sslsock;
 
-$loop->SSL_listen(
+my $listen_sock = $loop->SSL_listen(
    addr => { family => "inet", socktype => "stream" },
 
    SSL_key_file  => "t/privkey.pem",
    SSL_cert_file => "t/server.pem",
 
-   on_listen => sub { $listen_sock = shift },
    on_accept => sub { $sslsock = shift },
-
-   on_resolve_error => sub { die "Cannot resolve - $_[-1]\n" },
-   on_listen_error  => sub { die "Cannot listen - $_[-1]\n" },
-   on_ssl_error     => sub { die "SSL error - $_[-1]\n" },
-);
-
-wait_for { defined $listen_sock };
+)->get->read_handle;
 
 my $port = $listen_sock->sockport;
 

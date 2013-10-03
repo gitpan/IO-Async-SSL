@@ -49,16 +49,24 @@ DESCRIPTION
 LOOP METHODS
     The following extra methods are added to IO::Async::Loop.
 
-  $loop->SSL_upgrade( %params ) ==> $sslsocket
+  $loop->SSL_upgrade( %params ) ==> $stream | $socket
     This method upgrades a given stream filehandle into an SSL-wrapped
-    stream, returning a future which will yield an upgraded
-    `IO::Socket::SSL'.
+    stream, returning a future which will yield the given stream object or
+    socket.
 
     Takes the following parameters:
 
-    handle => IO
-            The IO handle of an already-established connection to act as the
-            transport for SSL.
+    handle => IO::Async::Stream | IO
+            The `IO::Async::Stream' object containing the IO handle of an
+            already-established connection to act as the transport for SSL;
+            or the plain IO socket handle itself.
+
+            If an `IO::Async::Stream' is passed it will have the `reader'
+            and `writer' functions set on it suitable for SSL use, and will
+            be returned as the result from the future.
+
+            If a plain socket handle is passed, that will be returned from
+            the future instead.
 
     SSL_server => BOOL
             If true, indicates this is the server side of the connection.

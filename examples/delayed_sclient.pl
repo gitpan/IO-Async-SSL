@@ -27,30 +27,7 @@ my $loop = IO::Async::Loop->new;
 my ( $socketstream, $stdiostream );
 my $peeraddr;
 
-$loop->connect(
-   host     => $HOST,
-   service  => $PORT,
-   family   => $FAMILY,
-   socktype => 'stream',
-
-   on_stream => sub {
-      $socketstream = shift;
-
-      my $socket = $socketstream->read_handle;
-      $peeraddr = $socket->peerhost . ":" . $socket->peerport;
-
-      print STDERR "Connected to $peeraddr. Send SIGQUIT (Ctrl-\\) to start SSL upgrade\n";
-   },
-
-   on_resolve_error => sub { die "Cannot resolve - $_[0]\n" },
-   on_connect_error => sub { die "Cannot connect\n" },
-);
-
-$loop->loop_once until defined $socketstream;
-
-my $socketproto = IO::Async::Protocol::Stream->new(
-   transport => $socketstream,
-
+$socketstream = IO::Async::Stream->new(
    on_read => sub {
       my ( undef, $buffref, $closed ) = @_;
 
@@ -67,7 +44,7 @@ my $socketproto = IO::Async::Protocol::Stream->new(
       $stdiostream->close_when_empty;
    },
 );
-$loop->add( $socketproto );
+$loop->add( $socketstream );
 
 $stdiostream = IO::Async::Stream->new(
    read_handle  => \*STDIN,
@@ -78,17 +55,31 @@ $stdiostream = IO::Async::Stream->new(
 
       # Turn plain \n into CRLFs
       $$buffref =~ s/\n/\x0d\x0a/g;
-      $socketproto->write( $$buffref );
+      $socketstream->write( $$buffref );
       $$buffref = "";
 
       return 0;
    },
 
    on_closed => sub {
-      $socketproto->transport->close_when_empty;
+      $socketstream->close_when_empty;
    },
 );
 $loop->add( $stdiostream );
+
+$loop->connect(
+   host     => $HOST,
+   service  => $PORT,
+   family   => $FAMILY,
+   socktype => 'stream',
+
+   handle => $socketstream,
+)->get;
+
+my $socket = $socketstream->read_handle;
+$peeraddr = $socket->peerhost . ":" . $socket->peerport;
+
+print STDERR "Connected to $peeraddr. Send SIGQUIT (Ctrl-\\) to start SSL upgrade\n";
 
 my $signal = IO::Async::Signal->new(
    name => "QUIT",
@@ -96,22 +87,22 @@ my $signal = IO::Async::Signal->new(
       my ( $self ) = @_;
       $loop->remove( $self );
 
-      $socketproto->SSL_upgrade(
-         on_upgraded => sub {
-            print STDERR "Now upgraded to SSL\n"; # TODO: get actual name somehow?
+      $loop->remove( $socketstream );
+      $loop->SSL_upgrade(
+         handle => $socketstream->read_handle,
+      )->on_done( sub {
+         print STDERR "Now upgraded to SSL\n"; # TODO: get actual name somehow?
+         $loop->add( $socketstream );
 
-            if( $DUMPCERT ) {
-               my $socket = $socketproto->transport->read_handle;
-               print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
-            }
-         },
-
-         on_error => sub {
-            die "Cannot upgrade to SSL - $_[-1]\n";
-         },
-      );
+         if( $DUMPCERT ) {
+            my $socket = $socketstream->read_handle;
+            print STDERR Net::SSLeay::PEM_get_string_X509($socket->peer_certificate) . "\n";
+         }
+      })->on_fail( sub {
+         die "Cannot upgrade to SSL - $_[-1]\n";
+      });
    },
 );
 $loop->add( $signal );
 
-$loop->await( $socketproto->transport->new_close_future, $stdiostream->new_close_future );
+$loop->await( $socketstream->new_close_future, $stdiostream->new_close_future );

@@ -8,7 +8,8 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.12';
+our $VERSION = '0.12_001';
+$VERSION = eval $VERSION;
 
 use Carp;
 
@@ -16,7 +17,7 @@ use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );
 
 use IO::Async::Handle 0.29;
-use IO::Async::Loop 0.59;
+use IO::Async::Loop '0.60_001'; # new Listen API
 
 =head1 NAME
 
@@ -112,19 +113,27 @@ The following extra methods are added to L<IO::Async::Loop>.
 
 =cut
 
-=head2 $loop->SSL_upgrade( %params ) ==> $sslsocket
+=head2 $loop->SSL_upgrade( %params ) ==> $stream | $socket
 
 This method upgrades a given stream filehandle into an SSL-wrapped stream,
-returning a future which will yield an upgraded C<IO::Socket::SSL>.
+returning a future which will yield the given stream object or socket.
 
 Takes the following parameters:
 
 =over 8
 
-=item handle => IO
+=item handle => IO::Async::Stream | IO
 
-The IO handle of an already-established connection to act as the transport
-for SSL.
+The C<IO::Async::Stream> object containing the IO handle of an
+already-established connection to act as the transport for SSL; or the plain
+IO socket handle itself.
+
+If an C<IO::Async::Stream> is passed it will have the C<reader> and C<writer>
+functions set on it suitable for SSL use, and will be returned as the result
+from the future.
+
+If a plain socket handle is passed, that will be returned from the future
+instead.
 
 =item SSL_server => BOOL
 
@@ -166,7 +175,17 @@ sub IO::Async::Loop::SSL_upgrade
 
    my $f = $loop->new_future;
 
-   my $socket = delete $params{handle} or croak "Expected 'handle'";
+   $params{handle} or croak "Expected 'handle'";
+
+   my $stream;
+   my $socket;
+   if( $params{handle}->isa( "IO::Async::Stream" ) ) {
+      $stream = delete $params{handle};
+      $socket = $stream->read_handle;
+   }
+   else {
+      $socket = delete $params{handle};
+   }
 
    {
       my $on_upgraded = delete $params{on_upgraded} or defined wantarray
@@ -195,7 +214,16 @@ sub IO::Async::Loop::SSL_upgrade
       my ( $self ) = @_;
       if( $socket->$ready_method ) {
          $loop->remove( $self );
-         $f->done( $socket );
+
+         if( $stream ) {
+            $stream->configure(
+               handle => $socket,
+               reader => \&IO::Async::SSLStream::sslread,
+               writer => \&IO::Async::SSLStream::sslwrite,
+            );
+         }
+
+         $f->done( $stream || $socket );
          return;
       }
 
@@ -209,6 +237,10 @@ sub IO::Async::Loop::SSL_upgrade
       $self->want_readready ( $SSL_ERROR == SSL_WANT_READ );
       $self->want_writeready( $SSL_ERROR == SSL_WANT_WRITE );
    };
+
+   # We're going to steal the IO handle from $stream, so we'll have to
+   # temporarily deconfigure it
+   $stream->configure( handle => undef ) if $stream;
 
    $loop->add( my $handle = IO::Async::Handle->new(
       handle => $socket,
@@ -302,20 +334,12 @@ sub IO::Async::Loop::SSL_connect
    )->then( sub {
       my ( $socket ) = @_;
 
+      $stream->configure( handle => $socket );
+
       $loop->SSL_upgrade(
          _SSL_args( %ssl_params ),
-         handle => $socket,
+         handle => $stream,
       )
-   })->then( sub {
-      my ( $socket ) = @_;
-
-      $stream->configure(
-         handle => $socket,
-         reader => \&IO::Async::SSLStream::sslread,
-         writer => \&IO::Async::SSLStream::sslwrite,
-      );
-
-      Future->new->done( $stream );
    });
 
    $f->on_done( $on_done ) if $on_done;
@@ -365,41 +389,44 @@ sub IO::Async::Loop::SSL_listen
    my %params = @_;
 
    my %ssl_params = map { $_ => delete $params{$_} } grep m/^SSL_/, keys %params;
-
-   my $on_accept;
-   if( exists $params{on_accept} ) {
-      $on_accept = delete $params{on_accept};
-   }
-   elsif( exists $params{on_stream} ) {
-      my $on_stream = delete $params{on_stream};
-      require IO::Async::SSLStream;
-      $on_accept = sub {
-         my ( $handle ) = @_;
-         $on_stream->( IO::Async::SSLStream->new( handle => $handle ) );
-      };
-   }
-   else {
-      croak "Expected 'on_accept' or 'on_stream'";
-   }
-
-   my $on_ssl_error = delete $params{on_ssl_error} or croak "Expected 'on_ssl_error'";
+   my $on_ssl_error = delete $params{on_ssl_error} or defined wantarray
+      or croak "Expected 'on_ssl_error'";
 
    $loop->listen(
       socktype => 'stream',
       %params,
-      on_accept => sub {
-         my ( $socket ) = @_;
+   )->on_done( sub {
+      my $listener = shift;
 
-         $loop->SSL_upgrade(
-            _SSL_args( SSL_server => 1, %ssl_params ),
+      my $cleartext_acceptor = $listener->acceptor;
+      my $ssl_acceptor = sub {
+         my $listener = shift;
+         my ( $listen_sock, %params ) = @_;
+         my $stream = $params{handle};
+         !defined $stream or $stream->isa( "IO::Async::Stream" ) or
+            croak "Can only accept SSL on IO::Async::Stream handles";
 
-            handle => $socket,
+         $listener->$cleartext_acceptor( $listen_sock )->then( sub {
+            my ( $socket ) = @_;
 
-            on_upgraded => $on_accept,
-            on_error    => $on_ssl_error,
-         );
-      },
-   );
+            $stream->configure( handle => $socket ) if $stream;
+
+            $loop->SSL_upgrade(
+               _SSL_args( SSL_server => 1, %ssl_params ),
+               handle   => ( $stream || $socket ),
+            )
+         })->else( sub {
+            my ( $failure ) = @_;
+            $on_ssl_error->( $failure ) if $on_ssl_error;
+            return Future->new->fail( $failure, ssl => );
+         });
+      };
+
+      $listener->configure( acceptor => $ssl_acceptor );
+   })->on_fail( sub {
+      my ( $message, $phase, @rest ) = @_;
+      $on_ssl_error->( $message, @rest ) if $phase eq "ssl";
+   });
 }
 
 =head1 STREAM PROTOCOL METHODS

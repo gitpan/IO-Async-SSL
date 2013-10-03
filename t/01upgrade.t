@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use Test::Identity;
 
 use IO::Async::Test;
 
@@ -16,6 +17,67 @@ my $loop = IO::Async::Loop->new;
 
 testing_loop( $loop );
 
+# ->SSL_upgrade on IO::Async::Stream
+{
+   my ( $server_sock, $client_sock ) = IO::Async::OS->socketpair or
+      die "Cannot socketpair - $!";
+
+   $server_sock->blocking( 0 );
+   $client_sock->blocking( 0 );
+
+   my @server_lines;
+   my $server_stream = IO::Async::Stream->new(
+      handle => $server_sock,
+      on_read => sub {
+         my ( $self, $buffref, $closed ) = @_;
+         push @server_lines, $1 while $$buffref =~ s/^(.*)\n//;
+         return 0;
+      },
+   );
+   $loop->add( $server_stream );
+
+   my @client_lines;
+   my $client_stream = IO::Async::Stream->new(
+      handle => $client_sock,
+      on_read => sub {
+         my ( $self, $buffref, $closed ) = @_;
+         push @client_lines, $1 while $$buffref =~ s/^(.*)\n//;
+         return 0;
+      },
+   );
+   $loop->add( $client_stream );
+
+   my $server_f = $loop->SSL_upgrade(
+      handle => $server_stream,
+      SSL_server => 1,
+      SSL_key_file  => "t/privkey.pem",
+      SSL_cert_file => "t/server.pem",
+   );
+
+   my $client_f = $loop->SSL_upgrade(
+      handle => $client_stream,
+      SSL_verify_mode => 0,
+   );
+
+   wait_for { $server_f->is_ready and $client_f->is_ready };
+
+   identical( $server_f->get, $server_stream, 'server SSL_upgrade yields $server_stream' );
+   identical( $client_f->get, $client_stream, 'client SSL_upgrade yields $client_stream' );
+
+   $server_stream->write( "Send a line\n" );
+
+   wait_for { @client_lines };
+
+   is( $client_lines[0], "Send a line", 'Line received by client' );
+
+   $client_stream->write( "Reply a line\n" );
+
+   wait_for { @server_lines };
+
+   is( $server_lines[0], "Reply a line", 'Line received by server' );
+}
+
+# ->SSL_upgrade on IO handles
 {
    my ( $server_sock, $client_sock ) = IO::Async::OS->socketpair or
       die "Cannot socketpair - $!";
@@ -48,42 +110,8 @@ testing_loop( $loop );
 
    wait_for { $server_f->is_ready and $client_f->is_ready };
 
-   ok( $server_upgraded, 'server upgraded' );
-   ok( $client_upgraded, 'client upgraded' );
-
-   my @server_lines;
-   my $server_stream = IO::Async::SSLStream->new(
-      handle => $server_sock,
-      on_read => sub {
-         my ( $self, $buffref, $closed ) = @_;
-         push @server_lines, $1 while $$buffref =~ s/^(.*)\n//;
-         return 0;
-      },
-   );
-   $loop->add( $server_stream );
-
-   my @client_lines;
-   my $client_stream = IO::Async::SSLStream->new(
-      handle => $client_sock,
-      on_read => sub {
-         my ( $self, $buffref, $closed ) = @_;
-         push @client_lines, $1 while $$buffref =~ s/^(.*)\n//;
-         return 0;
-      },
-   );
-   $loop->add( $client_stream );
-
-   $server_stream->write( "Send a line\n" );
-
-   wait_for { @client_lines };
-
-   is( $client_lines[0], "Send a line", 'Line received by client' );
-
-   $client_stream->write( "Reply a line\n" );
-
-   wait_for { @server_lines };
-
-   is( $server_lines[0], "Reply a line", 'Line received by server' );
+   identical( $server_f->get, $server_sock, 'server SSL_upgrade yields $server_sock' );
+   identical( $client_f->get, $client_sock, 'client SSL_upgrade yields $client_sock' );
 }
 
 {

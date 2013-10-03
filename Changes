@@ -1,5 +1,10 @@
 Revision history for IO-Async-SSL
 
+0.12_001  2013/10/03 19:49:20
+        [BUGFIXES]
+         * Support new IO::Async::Loop 0.60_001 listen API
+         * Listen via futures
+
 0.12    2013/09/10 01:17:16
         [BUGFIXES]
          * Ensure that ->connect with a 'handle' works, by deferring setting
