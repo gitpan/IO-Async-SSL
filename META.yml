@@ -6,7 +6,7 @@ build_requires:
   IO::Async::OS: 0
   Test::More: 0.88
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132510'
+generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132661'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -15,18 +15,18 @@ name: IO-Async-SSL
 provides:
   IO::Async::SSL:
     file: lib/IO/Async/SSL.pm
-    version: 0.12_001
+    version: 0.13
   IO::Async::SSLStream:
     file: lib/IO/Async/SSLStream.pm
-    version: 0.12_001
+    version: 0.13
 recommends:
   Mozilla::CA: 0
 requires:
   IO::Async::Handle: 0.29
-  IO::Async::Loop: 0.60_001
+  IO::Async::Loop: 0.61
   IO::Async::Protocol::Stream: 0
   IO::Async::Stream: 0.59
   IO::Socket::SSL: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.12_001
+version: 0.13

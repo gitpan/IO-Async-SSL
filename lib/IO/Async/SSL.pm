@@ -8,7 +8,7 @@ package IO::Async::SSL;
 use strict;
 use warnings;
 
-our $VERSION = '0.12_001';
+our $VERSION = '0.13';
 $VERSION = eval $VERSION;
 
 use Carp;
@@ -17,7 +17,7 @@ use IO::Socket::SSL qw( $SSL_ERROR SSL_WANT_READ SSL_WANT_WRITE );
 use POSIX qw( EAGAIN );
 
 use IO::Async::Handle 0.29;
-use IO::Async::Loop '0.60_001'; # new Listen API
+use IO::Async::Loop '0.61'; # new Listen API
 
 =head1 NAME
 

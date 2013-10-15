@@ -6,7 +6,7 @@ WriteMakefile
   'VERSION_FROM' => 'lib/IO/Async/SSL.pm',
   'PREREQ_PM' => {
                    'IO::Async::Handle' => '0.29',
-                   'IO::Async::Loop' => '0.60_001',
+                   'IO::Async::Loop' => '0.61',
                    'IO::Async::OS' => 0,
                    'IO::Async::Protocol::Stream' => 0,
                    'IO::Async::Stream' => '0.59',
