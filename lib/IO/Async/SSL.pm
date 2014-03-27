@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2014 -- leonerd@leonerd.org.uk
 
 package IO::Async::SSL;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 $VERSION = eval $VERSION;
 
 use Carp;
@@ -250,7 +250,11 @@ sub IO::Async::Loop::SSL_upgrade
 
    $ready->( $handle );
 
-   return $f;
+   return $f if defined wantarray;
+
+   # Caller is not going to keep hold of the Future, so we have to ensure it
+   # stays alive somehow
+   $f->on_ready( sub { undef $f } ); # intentional cycle
 }
 
 =head2 $loop->SSL_connect( %params ) ==> $stream
@@ -347,7 +351,11 @@ sub IO::Async::Loop::SSL_connect
       $on_ssl_error->( $_[0] ) if defined $_[1] and $_[1] eq "ssl";
    }) if $on_ssl_error;
 
-   return $f;
+   return $f if defined wantarray;
+
+   # Caller is not going to keep hold of the Future, so we have to ensure it
+   # stays alive somehow
+   $f->on_ready( sub { undef $f } ); # intentional cycle
 }
 
 =head2 $loop->SSL_listen( %params )
@@ -392,7 +400,7 @@ sub IO::Async::Loop::SSL_listen
    my $on_ssl_error = delete $params{on_ssl_error} or defined wantarray
       or croak "Expected 'on_ssl_error'";
 
-   $loop->listen(
+   my $f = $loop->listen(
       socktype => 'stream',
       %params,
    )->on_done( sub {
@@ -427,6 +435,12 @@ sub IO::Async::Loop::SSL_listen
       my ( $message, $phase, @rest ) = @_;
       $on_ssl_error->( $message, @rest ) if $phase eq "ssl";
    });
+
+   return $f if defined wantarray;
+
+   # Caller is not going to keep hold of the Future, so we have to ensure it
+   # stays alive somehow
+   $f->on_ready( sub { undef $f } ); # intentional cycle
 }
 
 =head1 STREAM PROTOCOL METHODS

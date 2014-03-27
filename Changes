@@ -1,5 +1,11 @@
 Revision history for IO-Async-SSL
 
+0.14    2014/03/27 11:24:08
+        [BUGFIXES]
+         * Avoid relying on strong forward references in Future, by creating
+           intentional cycles on pending Futures. Workaround for bugfix in
+           upcoming Future release.
+
 0.13    2013/10/03 19:49:20
         [BUGFIXES]
          * Support new IO::Async::Loop 0.61 listen API

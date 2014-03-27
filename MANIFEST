@@ -14,6 +14,7 @@ t/00use.t
 t/01upgrade.t
 t/02protocol-upgrade.t
 t/03cross.t
+t/04readwrite.t
 t/10connect-openssl.t
 t/10connect-socat.t
 t/11listen-openssl.t
